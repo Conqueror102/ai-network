@@ -89,12 +89,49 @@ At conferences and events:
 | Event SaaS (tiered by attendee count) | Organizer | v1 |
 | Exhibitor lead capture (per booth) | Exhibitor | v1.5 |
 | Connection-ROI premium reports | Organizer | v1.5 |
-| Sponsor inventory (meeting points, tiles) | Sponsors via organizer | v2 |
+| Sponsor inventory (meeting points, tiles) | Sponsors via organizer | v2 (one sponsor slot trialled at pilot, see 7.2) |
+| Sponsor ad slots: sponsored pushes, goal-matched booth nudges, sponsored post-event recap | Sponsors via organizer | v2 |
+| Sponsor lead / impact reports (views, taps, booth visits, contacts exchanged) | Sponsors via organizer | Unscheduled (see DECISIONS-NEEDED #9) |
+| White-label branding (event colours, logo, custom name) | Organizer | Unscheduled, higher tier (see DECISIONS-NEEDED #9) |
+| Pre-event matching & engagement (matches sent 2–3 days before doors open) | Organizer | Unscheduled, higher tier (see DECISIONS-NEEDED #9) |
 | Ticketing fee (% per paid ticket) | Attendee (pass-through) | v2 |
 | Office Hours booking fee (15–20% per paid VIP meeting) | Attendee (VIP earns the rest) | v2 |
 | Attendee premium (advanced search filters, unlimited waves, AI meeting briefs, who-viewed-you) | Attendee | v2 |
 
 **Free/paid red lines:** basic directory browsing, matching, and daily waves stay free forever (network liquidity is the product's oxygen). Premium buys *tools for yourself* — filters, volume, briefs — never *access to others*: no paid ranking boosts, no paid placement in match feeds, ever.
+
+### 7.1 Sponsor advertising through the organizer
+
+Organizers already sell sponsorship packages. Everyone at the event has the app open, so in-app sponsor slots give organizers a new, measurable thing to sell, and turn the product from a cost into a revenue source for them.
+
+Formats:
+- **Sponsor tile** in the event room / home screen ("Coffee by X, booth 4").
+- **Sponsored meeting points** — the suggested meet spot becomes the sponsor's lounge or booth.
+- **Sponsored announcements** — capped at 1–2 pushes per attendee per day so people don't mute the app.
+- **Goal-matched booth nudges** — "You're hiring developers; Y is at booth 7." Shown only when the attendee's own goals match the sponsor's declared offer.
+- **Sponsored post-event recap** — "Your event summary, brought to you by Z."
+- **Sponsor impact report** — aggregate views, taps, booth visits and contacts exchanged, so the organizer can prove value and charge more next year.
+
+How we earn: either (a) sponsor slots unlock in a higher organizer tier, or (b) a revenue share of 15–20% on what sponsors pay the organizer for in-app inventory. Revenue share is preferred for early pilots because it costs the organizer nothing upfront.
+
+Guardrails (extend the red lines above):
+1. Sponsors appear **beside** matches, never **as** matches. No sponsor is ever presented as a person you should meet, and sponsor spend never affects match scores, feed order or wave queues.
+2. Sponsors see **aggregates only**. An individual attendee's contact reaches a sponsor only when that attendee exchanges it themselves (booth tap-to-exchange).
+3. Every sponsored surface is clearly labelled as sponsored.
+
+### 7.2 Sequencing
+
+| Stage | Revenue focus | Why |
+|---|---|---|
+| Pilot (event 1) | Free for the organizer; trial **one** paid sponsor slot | A sponsor paying anything is the strongest early proof of willingness to pay |
+| Events 2–10 | Organizer SaaS tiers + exhibitor lead capture | Simple, familiar purchases for organizers and exhibitors |
+| Repeat organizers | Ticketing fee, Office Hours, attendee premium | Need trust, volume and repeat usage first |
+
+**Pilot sponsor slot delivery.** No v1 surface carries a sponsored label today, so the pilot slot needs one small addition to v1 scope: a single **sponsor tile** in the event room (sponsor name, logo, one line, booth/location), rendered with a fixed "Sponsored" label by the client (not editable by the organizer), configured by the organizer in the dashboard and screened by `safety_screen`. Organizer announcements are **not** used for sponsor content, because they have no sponsor identity or label field. If this addition is not accepted into v1, the pilot slot is out of scope and the pilot tests willingness to pay with a signed letter of intent from a sponsor instead.
+
+### 7.3 Two-sided dependency
+
+Organizers bring distribution and money; attendees create all the value organizers pay for (connections, sponsor views, booth leads). Early on we depend on organizers to get into each event. Over time, if attendees keep their profile and connections across events (follow-ups, city graph), they arrive at the next event already on the app, and organizers come to depend on us. Rule of thumb: **sell to organizers, build for attendees.**
 
 ## 8. Success metrics
 
