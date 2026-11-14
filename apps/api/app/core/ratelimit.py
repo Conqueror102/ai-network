@@ -1,11 +1,10 @@
 """Redis sliding-window rate limiter (03 §12)."""
 
-import time
-
 import structlog
 from fastapi import Request
 from redis.exceptions import RedisError
 
+from app.core import clock
 from app.core.errors import RateLimited
 from app.core.ids import new_id
 from app.core.redis import get_redis, key
@@ -44,7 +43,7 @@ async def hit(
             _LUA,
             1,
             key("rl", scope, ident),
-            str(int(time.time() * 1000)),
+            str(int(clock.now().timestamp() * 1000)),
             str(window_s * 1000),
             str(limit),
             new_id("h"),
@@ -63,7 +62,7 @@ async def hit(
 async def peek(scope: str, ident: str, *, window_s: int) -> int:
     r = get_redis()
     k = key("rl", scope, ident)
-    await r.zremrangebyscore(k, 0, int(time.time() * 1000) - window_s * 1000)
+    await r.zremrangebyscore(k, 0, int(clock.now().timestamp() * 1000) - window_s * 1000)
     return int(await r.zcard(k))
 
 

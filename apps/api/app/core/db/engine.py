@@ -1,8 +1,9 @@
 """Async engine and session factory."""
 
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Annotated, Any
 
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -59,6 +60,9 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             yield session
         finally:
             await session.rollback()
+
+
+DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
 async def dispose_engine() -> None:

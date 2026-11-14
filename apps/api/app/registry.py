@@ -6,6 +6,9 @@ from fastapi import FastAPI
 
 MODULES: list[str] = [
     "ai",
+    "identity",
+    "organizers",
+    "events",
 ]
 
 

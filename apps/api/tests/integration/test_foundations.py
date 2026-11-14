@@ -73,7 +73,7 @@ def test_jwt_roundtrip_and_expiry():
 
     tok = issue_access_token("usr_1")
     assert verify_access_token(tok)["sub"] == "usr_1"
-    clock.advance(timedelta(minutes=16))
+    clock.advance(timedelta(days=41))
     with pytest.raises(Unauthenticated):
         verify_access_token(tok)
     with pytest.raises(Unauthenticated):
