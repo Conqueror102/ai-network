@@ -2,6 +2,21 @@
 
 Milestones are sequential; each has a **Definition of Done (DoD)** — all items checkable, no "mostly done". Solo-builder pacing ≈ 12–14 weeks to pilot; parallelize if more hands.
 
+## v0 — Lean pilot build (≈ 6 weeks solo) — use this before M0–M8
+
+Purpose: prove the core loop at one real event before building the full plan. Same stack and architecture as the full spec, smaller scope. Attendee client is the PWA (00 §3a).
+
+| Week | Scope | Done when |
+|---|---|---|
+| 1 | Monorepo, FastAPI skeleton, Postgres+pgvector, Redis, ARQ, CI; Next.js app with attendee (PWA) + organizer route groups; `LLMProvider` + `PaymentProvider` + `OtpSender` interfaces; Langfuse wired | `docker compose up` runs the stack; a test AI call shows up as a trace |
+| 2 | OTP auth (Termii + Turnstile + fraud caps), profile, events CRUD, rotating door QR, check-in, organizer live counter | Sign up and check in on a real phone in < 90 s |
+| 3 | Event profiles, goals + `goal_parser`, embeddings, **contact exchange (QR) with AI note + next-morning follow-up draft** | Two phones exchange contacts; follow-up draft appears next morning |
+| 4 | Matching feed + `match_explainer` (pre-computed), waves with intro card + silent decline, block/report | Invariant tests: silent decline, blocks absolute, first contact structured |
+| 5 | Chat over WS (ticket auth) + **wingman** (`icebreakers`, `chat_assist` streaming), web push + in-app inbox, one sponsor tile | Chat works with AI off; wingman evals pass in CI |
+| 6 | Load test (k6), security invariants incl. tenant/organizer/sponsor scope, AI dashboards + alerts + kill switches, runbooks, dry run with 20 people | All `tests/invariants/*` green; dry run done; go/no-go for pilot |
+
+Deferred to after the pilot: BLE radar and the Expo app, session QRs, ROI report, exhibitor booths, Office Hours, premium, ticketing.
+
 ## M0 — Foundations (week 1)
 Monorepo scaffold (pnpm workspaces + uv); FastAPI skeleton with module layout, health route, error envelope middleware, request-id logging; Alembic + initial migration (users, auth, devices); docker-compose dev stack; CI green (lint+type+test all packages); Expo app boots with dev client (BLE lib linked from day 1); Next.js dashboard boots; orval codegen pipeline works.
 **DoD:** `docker compose up` + `pnpm dev` gives a running stack; a change to a FastAPI schema fails CI until TS client regenerated.
@@ -49,9 +64,9 @@ Radar Layers 1+2 (01 §9, BLE spike first: 2-day feasibility test on 4 device mo
 | API integration | pytest + httpx against test DB (transactional fixtures) | CI |
 | **Invariant suite** | dedicated `tests/invariants/` per 08 §4 | CI, blocking |
 | Contract | OpenAPI snapshot + orval drift check | CI |
-| E2E mobile | Maestro flows: signup, checkin, wave, chat | pre-release |
+| E2E | Playwright (PWA) flows: signup, checkin, wave, chat, contact exchange; Maestro once the Expo app exists (v1.5) | pre-release |
 | Load | k6 scripts in repo | pre-event |
-| AI evals | golden set: 50 goal-parse cases, 30 explanation groundedness cases, 40 safety-screen cases (curated + adversarial); run on prompt version bump | CI (prompt changes) |
+| AI evals | golden sets per 06 §7 (goal parse, groundedness, safety, wingman, red-team); run on any prompt, model or provider change | CI (blocking on regression) |
 
 ## Standing risks while building
 

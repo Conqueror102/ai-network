@@ -14,12 +14,13 @@ Seed script `apps/api/scripts/seed_event.py`: creates 1 event, 200 fake attendee
 
 ```
 Cloudflare (DNS, TLS, WAF, rate-limit backstop)
-  → Railway: api (uvicorn, 2× 1vCPU/2GB, autoscale to 4)
-  → Railway: worker (arq, 1× 1vCPU/2GB)
-  → Railway: cron (arq scheduler)
+  → Render (Frankfurt): api (uvicorn, 2× instances, scale to 4 on event days)
+  → Render: worker (arq, 1 instance; split into default + ai pools at stage 2)
+  → Render: cron (arq scheduler)
 Neon Postgres (pgvector, PITR)          Upstash Redis
 Cloudflare R2 + CDN (photos)            Vercel (dashboard)  EAS (mobile builds)
-Sentry (all three apps)                 Better Stack / Railway logs
+Sentry (all three apps)                 Better Stack / Render logs
+Langfuse (AI traces, prompts, evals)
 ```
 
 Config: 12-factor env vars. Full list maintained in `apps/api/.env.example` (DATABASE_URL, REDIS_URL, JWT_SECRET, JWT_SECRET_NEXT, ANTHROPIC_API_KEY, VOYAGE_API_KEY, R2_*, EXPO_ACCESS_TOKEN, TWILIO_*, RESEND_*, SENTRY_DSN, MSG_ENC_KEY, PAYSTACK_*/STRIPE_* [v2]).

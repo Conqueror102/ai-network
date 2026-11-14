@@ -44,4 +44,4 @@ At a conference, you set goals ("meet fintech CTOs raising Series A"). The app m
 
 ## Stack (summary)
 
-Expo/React Native (mobile) · Next.js (organizer dashboard) · FastAPI (backend) · PostgreSQL + pgvector · Redis · Claude API (`claude-opus-4-8`) + Voyage embeddings · Expo Push · Paystack/Stripe.
+Next.js PWA (attendee, v0/v1) + Expo/React Native (from v1.5 for BLE radar) · Next.js (organizer dashboard) · FastAPI (backend) · PostgreSQL + pgvector · Redis · provider-agnostic LLM layer (Claude default, tiered per task) + Voyage embeddings · Langfuse · Web Push · Bachs (first) behind a payment adapter · Render + Vercel + Cloudflare.
