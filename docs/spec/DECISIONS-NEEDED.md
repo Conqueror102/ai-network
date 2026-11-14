@@ -12,5 +12,5 @@ Open items a builder cannot decide alone. Everything else in the spec is decided
 | 6 | Legal | Privacy policy + ToS (NDPA 2023 compliant), business entity for payments | M8 (pilot), hard for v2 payments |
 | 7 | Office Hours policy details | Price bounds final, dispute SLA, charity list | v2 |
 | 8 | Premium pricing | Monthly vs event-pass amounts | v2 |
-| 10 | First payment provider | Victor said "bach" on 2026-11-14 — assumed Paystack; confirm | Before org billing |
+| 10 | First payment provider | Decided 2026-11-14: **Bachs** (https://bachs.io/) behind the `PaymentProvider` adapter. Still to check: bulk payouts to third parties for Office Hours (11 §9.4) | Done (payouts check before v2) |
 | 11 | Default LLM provider per task after pilot | Re-run evals across providers with pilot data; keep or switch per task (06 §1a) | Post-pilot |

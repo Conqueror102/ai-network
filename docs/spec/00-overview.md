@@ -28,6 +28,7 @@ Core loop: attendee checks into an event via QR → declares goals → engine co
 | `08-security-privacy.md` | Auth design, authorization matrix, threat model, retention, invariants |
 | `09-infrastructure-scaling.md` | Deploy, environments, CI, observability, capacity math, scaling stages |
 | `10-build-plan.md` | Milestones with definitions of done, test strategy |
+| `11-backend-architecture.md` | Backend layering, module boundaries, folder structure, security wiring, config, observability, testing, build order |
 
 The older `docs/*.md` (PRD, user-stories, architecture, tech-stack) remain as context/rationale; **on any conflict, `docs/spec/` wins.**
 
@@ -52,7 +53,7 @@ These are final. Each row lists what was rejected so nobody re-litigates.
 | LLM | **Provider-agnostic** `LLMProvider` interface (06 §1a). Default provider Claude, routed per task: small model for `safety_screen` / `match_explainer`, mid model for `goal_parser` / `chat_assist` / `icebreakers`; top model only where evals show the mid model falls short. Exact model IDs pinned in config | One model for every task (cost and latency on event day); hard-coding one vendor's SDK across the code (lock-in); LangChain (heavy abstraction; the thin interface is enough) |
 | Embeddings | Voyage AI `voyage-3.5`, 1024 dims, cosine distance | OpenAI embeddings (no strong reason; Voyage pairs well with Claude stack) |
 | Push | v0/v1: **Web Push** (VAPID) from the PWA, with in-app inbox and SMS/WhatsApp fallback for critical events (iOS web push needs home-screen install). v1.5+: Expo Push | Raw FCM/APNs (Expo wraps both) |
-| Payments | **`PaymentProvider` adapter** (create checkout, verify webhook, refund, payout). First implementation: Paystack (NGN + African cards); Stripe/Flutterwave added behind the same interface later. Pilot billing: manual invoices | Calling one provider's SDK directly from business logic (switching cost) |
+| Payments | **`PaymentProvider` adapter** (create checkout, verify webhook, refund, payout). First implementation: **Bachs** (bachs.io: checkout, subscriptions, invoicing, African settlement); others added behind the same interface later. Pilot billing: manual invoices | Calling one provider's SDK directly from business logic (switching cost) |
 | Object storage | Cloudflare R2 (S3-compatible) + CDN | — |
 | Hosting | API, ARQ worker and cron: **Render** (Frankfurt region, paid instances on event days); web apps: **Vercel**; DNS/WAF/R2: **Cloudflare**; DB: Neon; Redis: Upstash. Keep API, DB and Redis in the same EU region | Kubernetes (massively premature); Cloudflare Workers for the API (poor fit for long-lived WebSockets and Python background workers); Render free tier (sleeps) |
 | OTP / messaging | **Termii** primary for NG SMS + WhatsApp OTP, Twilio Verify as backup behind one `OtpSender` interface; Resend for email; **Cloudflare Turnstile** on OTP request | Single SMS provider (NG delivery risk) |
