@@ -12,3 +12,4 @@ Open items a builder cannot decide alone. Everything else in the spec is decided
 | 6 | Legal | Privacy policy + ToS (NDPR compliant), business entity for payments | M8 (pilot), hard for v2 payments |
 | 7 | Office Hours policy details | Price bounds final, dispute SLA, charity list | v2 |
 | 8 | Premium pricing | Monthly vs event-pass amounts | v2 |
+| 9 | Schedule for new organizer revenue features | Sponsor impact reports, white-label branding and pre-event matching (PRD §7) are not in any build milestone yet; assign them to v1.5 or later. Also accept or reject the pilot sponsor tile (PRD §7.2) | Before v1.5 planning |

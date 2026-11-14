@@ -91,9 +91,9 @@ At conferences and events:
 | Connection-ROI premium reports | Organizer | v1.5 |
 | Sponsor inventory (meeting points, tiles) | Sponsors via organizer | v2 (one sponsor slot trialled at pilot, see 7.2) |
 | Sponsor ad slots: sponsored pushes, goal-matched booth nudges, sponsored post-event recap | Sponsors via organizer | v2 |
-| Sponsor lead / impact reports (views, taps, booth visits, contacts exchanged) | Sponsors via organizer | v1.5 |
-| White-label branding (event colours, logo, custom name) | Organizer | v1.5 (higher tier) |
-| Pre-event matching & engagement (matches sent 2–3 days before doors open) | Organizer | v1.5 (higher tier) |
+| Sponsor lead / impact reports (views, taps, booth visits, contacts exchanged) | Sponsors via organizer | Unscheduled (see DECISIONS-NEEDED #9) |
+| White-label branding (event colours, logo, custom name) | Organizer | Unscheduled, higher tier (see DECISIONS-NEEDED #9) |
+| Pre-event matching & engagement (matches sent 2–3 days before doors open) | Organizer | Unscheduled, higher tier (see DECISIONS-NEEDED #9) |
 | Ticketing fee (% per paid ticket) | Attendee (pass-through) | v2 |
 | Office Hours booking fee (15–20% per paid VIP meeting) | Attendee (VIP earns the rest) | v2 |
 | Attendee premium (advanced search filters, unlimited waves, AI meeting briefs, who-viewed-you) | Attendee | v2 |
@@ -126,6 +126,8 @@ Guardrails (extend the red lines above):
 | Pilot (event 1) | Free for the organizer; trial **one** paid sponsor slot | A sponsor paying anything is the strongest early proof of willingness to pay |
 | Events 2–10 | Organizer SaaS tiers + exhibitor lead capture | Simple, familiar purchases for organizers and exhibitors |
 | Repeat organizers | Ticketing fee, Office Hours, attendee premium | Need trust, volume and repeat usage first |
+
+**Pilot sponsor slot delivery.** No v1 surface carries a sponsored label today, so the pilot slot needs one small addition to v1 scope: a single **sponsor tile** in the event room (sponsor name, logo, one line, booth/location), rendered with a fixed "Sponsored" label by the client (not editable by the organizer), configured by the organizer in the dashboard and screened by `safety_screen`. Organizer announcements are **not** used for sponsor content, because they have no sponsor identity or label field. If this addition is not accepted into v1, the pilot slot is out of scope and the pilot tests willingness to pay with a signed letter of intent from a sponsor instead.
 
 ### 7.3 Two-sided dependency
 
