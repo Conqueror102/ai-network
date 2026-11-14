@@ -2,7 +2,7 @@
 
 ## 1. WebSocket protocol
 
-- Endpoint: `wss://api.<domain>/v1/ws?token=<access_jwt>` (token in query because RN WS headers are unreliable; token validated on connect; connection dropped when JWT expires → client reconnects with fresh token).
+- Endpoint: `wss://api.<domain>/v1/ws?ticket=<ws_ticket>`. The client first calls `POST /v1/ws/ticket` (authenticated) to get a **single-use ticket valid 30 s** (stored in Redis, deleted on use), so the long-lived access JWT never appears in URLs or proxy logs. Connection is bound to the ticket's user; dropped when that user's access token would expire → client fetches a new ticket and reconnects.
 - One connection per app instance. Server: FastAPI WS endpoint; fan-out via Redis pub/sub so any API instance can deliver to any socket.
 - Envelope (server→client):
 ```json

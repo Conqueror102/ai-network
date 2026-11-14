@@ -7,7 +7,7 @@
 
 AiNetwork is an event-networking platform with three deliverables:
 
-1. **Attendee mobile app** — React Native (Expo, TypeScript), iOS + Android from one codebase.
+1. **Attendee app** — v0/v1: installable web app (PWA, Next.js + TypeScript) opened from the check-in QR. From v1.5 (BLE radar): React Native (Expo, TypeScript), iOS + Android from one codebase. See §3a.
 2. **Organizer web dashboard** — Next.js (TypeScript).
 3. **Backend platform** — FastAPI (Python 3.12) monolith + background workers, PostgreSQL, Redis.
 
@@ -42,20 +42,32 @@ These are final. Each row lists what was rejected so nobody re-litigates.
 | DB | PostgreSQL 16 + pgvector extension | Separate vector DB (Pinecone/Qdrant — extra system to operate); MongoDB (relational data, joins everywhere) |
 | Cache/queues/presence | Redis 7 (managed) | In-process caches (multi-instance WS needs shared pub/sub) |
 | Background jobs | ARQ (async, Redis-backed) | Celery (sync-first, heavier config) |
-| Mobile | Expo SDK (latest stable) + React Native, TypeScript, `expo-router` | Native Swift/Kotlin (two codebases); Flutter (team knows RN) |
-| Mobile builds | EAS Build with **custom dev client from day 1** (BLE requires it) | Expo Go (no BLE support) |
+| Attendee app (v0/v1) | **PWA** in Next.js (App Router, TypeScript), Tailwind + shadcn/ui, browser camera API for QR | Native app at pilot (install friction at the venue door; BLE is not needed until v1.5) |
+| Attendee app (v1.5+) | Expo SDK (latest stable) + React Native, TypeScript, `expo-router`; EAS Build with custom dev client (BLE requires it) | Native Swift/Kotlin (two codebases); Flutter (team knows RN); Expo Go (no BLE support) |
 | BLE | `react-native-ble-plx` | Nearby/UWB APIs (fragmented, unnecessary precision) |
 | Dashboard | Next.js (App Router), TypeScript, deployed on Vercel | Embedding dashboard in mobile app (organizers work on laptops) |
 | API style | REST + WebSocket, versioned under `/v1` | GraphQL (adds complexity; OpenAPI codegen gives us typed clients anyway) |
 | Client typing | OpenAPI schema → generated TS client (`orval`) in `packages/shared-types` | Hand-written API clients (drift) |
 | Auth | Email/phone OTP → JWT access (15 min) + rotating refresh (30 days) | Third-party auth SaaS (cost, lock-in; revisit if OTP delivery becomes painful) |
-| LLM | Claude API, model `claude-opus-4-8` for all language tasks | Per-task model zoo (premature optimization; tune after cost data exists) |
+| LLM | **Provider-agnostic** `LLMProvider` interface (06 §1a). Default provider Claude, routed per task: small model for `safety_screen` / `match_explainer`, mid model for `goal_parser` / `chat_assist` / `icebreakers`; top model only where evals show the mid model falls short. Exact model IDs pinned in config | One model for every task (cost and latency on event day); hard-coding one vendor's SDK across the code (lock-in); LangChain (heavy abstraction; the thin interface is enough) |
 | Embeddings | Voyage AI `voyage-3.5`, 1024 dims, cosine distance | OpenAI embeddings (no strong reason; Voyage pairs well with Claude stack) |
-| Push | Expo Push Notifications | Raw FCM/APNs (Expo wraps both) |
-| Payments | Paystack (NGN + African cards) primary, Stripe (international) secondary — v2 | — |
+| Push | v0/v1: **Web Push** (VAPID) from the PWA, with in-app inbox and SMS/WhatsApp fallback for critical events (iOS web push needs home-screen install). v1.5+: Expo Push | Raw FCM/APNs (Expo wraps both) |
+| Payments | **`PaymentProvider` adapter** (create checkout, verify webhook, refund, payout). First implementation: Paystack (NGN + African cards); Stripe/Flutterwave added behind the same interface later. Pilot billing: manual invoices | Calling one provider's SDK directly from business logic (switching cost) |
 | Object storage | Cloudflare R2 (S3-compatible) + CDN | — |
-| Hosting | API + workers: Railway (or Fly.io — pick at deploy time, both fine); DB: Neon; Redis: Upstash | Kubernetes (massively premature) |
+| Hosting | API, ARQ worker and cron: **Render** (Frankfurt region, paid instances on event days); web apps: **Vercel**; DNS/WAF/R2: **Cloudflare**; DB: Neon; Redis: Upstash. Keep API, DB and Redis in the same EU region | Kubernetes (massively premature); Cloudflare Workers for the API (poor fit for long-lived WebSockets and Python background workers); Render free tier (sleeps) |
+| OTP / messaging | **Termii** primary for NG SMS + WhatsApp OTP, Twilio Verify as backup behind one `OtpSender` interface; Resend for email; **Cloudflare Turnstile** on OTP request | Single SMS provider (NG delivery risk) |
+| AI observability | **Langfuse** (traces, prompt versions, evals, cost) + own `ai_calls` table | Building tracing UI ourselves; LangSmith (tied to LangChain) |
+| E2E tests | Playwright (PWA) ; Maestro from v1.5 (native) | — |
 | Error tracking | Sentry (API, mobile, dashboard) | — |
+
+## 3a. Revision 2026-11-14 (v0 decisions)
+
+Agreed in the 2026-11-14 brainstorm with Victor; supersedes earlier rows above where they differ:
+- Attendee client is a PWA until BLE radar (v1.5). Expo-specific items elsewhere in the spec (EAS, Expo Push, `react-native-ble-plx`) apply from v1.5.
+- The AI layer is provider-agnostic (06 §1a); Claude is the default provider, not a hard dependency.
+- Payments, OTP and push sit behind swappable adapter interfaces.
+- The wingman (`chat_assist`, `icebreakers`) is **in v0 scope**.
+- A lean v0 plan (10 §v0) precedes the full M0–M8 plan.
 
 ## 4. Global conventions (apply everywhere)
 
@@ -79,7 +91,7 @@ These are final. Each row lists what was rejected so nobody re-litigates.
 ### Code conventions
 - Backend modules live in `apps/api/app/modules/<name>/` with `router.py`, `service.py`, `models.py`, `schemas.py`, `jobs.py` (if any). Routers contain no business logic; services contain no HTTP concerns.
 - Every DB access goes through the module's service. Cross-module calls go service→service, never router→foreign service.
-- All AI calls go through `modules/ai` — no other module imports the Anthropic SDK.
+- All AI calls go through `modules/ai` — no other module imports any LLM or embedding SDK.
 - Feature flags: simple `settings.flags` dict from env; no flag SaaS.
 
 ### Non-negotiable product invariants (enforced in code review; tests required)

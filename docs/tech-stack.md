@@ -1,5 +1,7 @@
 # Tech Stack & Tooling — AiNetwork
 
+> **Note (2026-11-14):** superseded where it differs by `docs/spec/00-overview.md` §3 and §3a (PWA attendee app for v0/v1, provider-agnostic tiered LLM layer, Render + Vercel + Cloudflare hosting, payment/OTP adapters, Langfuse, Web Push, Playwright).
+
 Chosen around skills you already have (Python/FastAPI, JS/TS, Node/Express/Nest/Next, React Native/Expo) — zero new languages to learn for v1.
 
 ## 1. The stack

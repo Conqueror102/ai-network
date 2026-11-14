@@ -48,7 +48,23 @@ Each invariant has a dedicated test in `tests/invariants/`:
 
 - Encryption: TLS 1.2+ in transit; provider disk encryption at rest; `messages.body` additionally app-layer encrypted (AES-GCM, key in env/KMS) so DB dumps don't expose chats.
 - PII inventory: `users.phone/email/real_name`, `connections.shared`, message bodies. Everything else is pseudonymous behind ULIDs.
-- NDPR/GDPR rights: export (`GET /me/export`, async, 72 h SLA) and erasure (`DELETE /me`, 30-day hard delete) — see retention table in 02.
+- NDPA 2023 (Nigeria Data Protection Act, which replaced the NDPR) / GDPR rights: export (`GET /me/export`, async, 72 h SLA) and erasure (`DELETE /me`, 30-day hard delete) — see retention table in 02.
 - Logs: structured JSON; PII scrubbed at the logging formatter (phone/email regex redaction); request bodies never logged on auth/chat routes.
 - Backups: daily automated (Neon PITR); restore drill before pilot event (10 §4).
 - Secrets: platform env vars; no secrets in repo; rotation runbook in 09 §7.
+
+## 6. Additions (revision 2026-11-14)
+
+| Threat / gap | Mitigation |
+|---|---|
+| **SMS pumping / OTP toll fraud** (attackers trigger OTPs to premium numbers; we pay) | Cloudflare Turnstile before `POST /auth/otp/request`; caps per phone (3/h), per number prefix and per IP; country allowlist for SMS (NG + pilot countries); prefer WhatsApp or email OTP where available; alert on OTP volume spike; daily SMS spend cap at provider |
+| **Access token in WebSocket URL** | Single-use 30 s WS ticket (07 §1); access JWT never placed in a URL |
+| **Organizer staff over-access** | Organizer roles see aggregates and their own event's operational data only; never chats, waves, match scores or individual contact details. Every export is audit-logged (who, what, when). Invariant test `test_organizer_scope` |
+| **Cross-tenant leakage** | Every organizer/event query filtered by `org_id`/`event_id` in the service layer; invariant test `test_tenant_isolation` (organizer A can never read organizer B's events, attendees or analytics) |
+| **Sponsor data access** | Sponsors receive aggregates only (views, taps, booth visits); an individual's contact reaches a sponsor only via that person's own booth tap-to-exchange. Invariant test `test_sponsor_aggregates_only` |
+| **Sponsor influence on ranking** | Extend `test_money_never_ranks` to sponsor spend and sponsor flags |
+| **AI traces containing PII** | Mask phone/email before trace export; 30-day trace retention; EU-region tracing vendor (06 §6) |
+| **Payment webhooks** | Verified per provider inside the `PaymentProvider` adapter; idempotent on provider event ID |
+
+**Legal (NDPA 2023):** privacy policy and ToS before the pilot, consent screens for data processing and for AI assistance on chats, a named data-protection contact, breach notification process, and a record of processing activities (data inventory above).
+
