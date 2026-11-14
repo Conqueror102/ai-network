@@ -12,5 +12,5 @@ Open items a builder cannot decide alone. Everything else in the spec is decided
 | 6 | Legal | Privacy policy + ToS (NDPA 2023 compliant), business entity for payments | M8 (pilot), hard for v2 payments |
 | 7 | Office Hours policy details | Price bounds final, dispute SLA, charity list | v2 |
 | 8 | Premium pricing | Monthly vs event-pass amounts | v2 |
-| 10 | First payment provider | Victor said "bach" on 2026-11-14 — assumed Paystack; confirm | Before org billing |
+| 10 | Payment provider details | Bachs chosen 2026-11-14 as first adapter. Confirm with Bachs: fees, licensing/CBN status, split payouts/sub-merchants (needed for Office Hours, ticketing, sponsor rev share), refund API. If no splits, add Paystack adapter for v2 marketplace flows | Before org billing |
 | 11 | Default LLM provider per task after pilot | Re-run evals across providers with pilot data; keep or switch per task (06 §1a) | Post-pilot |

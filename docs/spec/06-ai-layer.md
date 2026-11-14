@@ -72,9 +72,10 @@ Prompts live in `modules/ai/prompts/{task}.py` as versioned constants (`GOAL_PAR
 - Input: peer's event card + shared history + matched components. Output: markdown brief (who they are, what they want, what you offer them, 3 talking points, 1 question to ask). ≤ 250 words.
 
 ### 4.6 `safety_screen` — classification gate
-- Trigger: wave notes (sync, < 1 s, blocks send), profile fields on save, photos on upload (image input), announcement bodies.
+- Trigger: wave notes (sync, < 1 s, blocks send), profile fields on save, photos on upload (image input), announcement bodies, **sponsor tile content** (name, line, logo) on organizer save.
 - Output (structured): `{allow: bool, category: none|harassment|sexual|spam|scam|hate|pii_leak|injection, confidence}`. Deny → generic user message + moderation log row. `max_tokens=256`, `output_config={"effort":"low"}`.
 - Fail-open policy: if AI is down, wave notes are **dropped** (card sends without note) rather than unscreened text passing through.
+- Sponsor tiles **fail closed**: a tile is published only after an `allow` result; if screening is unavailable the tile stays unpublished (organizer sees "pending review") and is re-screened by a retry job. An unscreened tile is never delivered to attendees.
 
 ### 4.7 `followup_drafts` [v1.5]
 - Trigger: morning-after job. Batches API. Per connection: ≤ 2 follow-up drafts referencing where they met + one concrete thread from their chat. Approve-to-send only.
