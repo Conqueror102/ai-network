@@ -1,0 +1,39 @@
+# Render blueprint. Frankfurt, same region as Neon and Upstash (00 §3).
+# Secrets live in the "ainet-prod" environment group, never in this file.
+services:
+  - type: web
+    name: ainet-api
+    runtime: docker
+    region: frankfurt
+    plan: standard
+    rootDir: apps/api
+    dockerfilePath: ../../infra/docker/Dockerfile
+    dockerContext: .
+    healthCheckPath: /readyz
+    numInstances: 2
+    preDeployCommand: alembic upgrade head
+    envVars:
+      - { key: ROLE, value: api }
+      - fromGroup: ainet-prod
+  - type: worker
+    name: ainet-worker
+    runtime: docker
+    region: frankfurt
+    plan: standard
+    rootDir: apps/api
+    dockerfilePath: ../../infra/docker/Dockerfile
+    dockerContext: .
+    envVars:
+      - { key: ROLE, value: worker }
+      - fromGroup: ainet-prod
+  - type: worker
+    name: ainet-scheduler
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    rootDir: apps/api
+    dockerfilePath: ../../infra/docker/Dockerfile
+    dockerContext: .
+    envVars:
+      - { key: ROLE, value: scheduler }
+      - fromGroup: ainet-prod
