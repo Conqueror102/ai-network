@@ -1,0 +1,54 @@
+# Prometheus alert rules for the API (docs/spec/11 §11, docs/spec/09 §2).
+# Import into Grafana Cloud (Alerting -> Alert rules -> Import) or load with
+# `rule_files` in a self-hosted Prometheus. Scrape target: GET /metrics with
+# `Authorization: Bearer $METRICS_TOKEN` on the api and worker services.
+groups:
+  - name: api
+    rules:
+      - alert: ApiErrorRateHigh
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(http_requests_total[5m])) > 0.02
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: More than 2% of API requests are failing
+          runbook: docs/runbooks/incident.md
+      - alert: ApiLatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 0.8
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: API p95 latency is above 800 ms
+          runbook: docs/runbooks/incident.md
+      - alert: OutboxStuck
+        expr: outbox_lag_seconds > 120
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: Domain events are not being delivered (notifications, matching and realtime stall)
+          runbook: docs/runbooks/incident.md#outbox-is-stuck
+      - alert: JobFailures
+        expr: sum by (name) (increase(jobs_total{outcome="error"}[15m])) > 5
+        labels: { severity: ticket }
+        annotations:
+          summary: "Background job {{ $labels.name }} keeps failing"
+      - alert: OtpSendFailing
+        expr: |
+          sum(rate(otp_sent_total{outcome!="ok"}[10m]))
+            / sum(rate(otp_sent_total[10m])) > 0.2
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: People cannot sign in because OTP delivery is failing
+          runbook: docs/runbooks/incident.md#people-cannot-sign-in
+      - alert: AiFailing
+        expr: |
+          sum(rate(ai_calls_total{outcome!="ok"}[10m]))
+            / sum(rate(ai_calls_total[10m])) > 0.3
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: AI calls are failing. The app degrades gracefully, but matches lose their explanations
+          runbook: docs/runbooks/incident.md#ai-provider-is-down

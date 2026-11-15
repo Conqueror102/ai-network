@@ -1,6 +1,11 @@
 from typing import Literal
 
+import structlog
+
 from app.adapters.otp.port import OtpSendError
+from app.core.config import get_settings
+
+log = structlog.get_logger()
 
 
 class FakeOtp:
@@ -17,6 +22,8 @@ class FakeOtp:
         if self.fail:
             raise OtpSendError("fake failure")
         self.sent.append((channel, destination, code))
+        if get_settings().env == "dev":  # a code in the logs is a dev convenience only
+            log.info("fake_otp_code", channel=channel, destination=destination, code=code)
 
     def last_code(self, destination: str) -> str:
         return next(c for _, d, c in reversed(self.sent) if d == destination)

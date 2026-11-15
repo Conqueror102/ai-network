@@ -30,3 +30,14 @@ async def resurface() -> None:
                     continue
                 midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
                 await service.resurface(session, e.id, midnight)
+
+
+SCRUB_AFTER = timedelta(days=30)
+
+
+@jobs.cron("waves.retention", hour={2}, minute={20})
+async def retention() -> None:
+    """Declined and expired waves keep their row (the dedupe constraint needs it) but
+    lose the frozen card and note after 30 days (02 retention)."""
+    async with UnitOfWork() as session:
+        await service.scrub_resolved(session, clock.now() - SCRUB_AFTER)

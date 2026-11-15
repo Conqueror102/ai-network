@@ -8,3 +8,6 @@ __pycache__/
 node_modules/
 *.pyc
 dump.rdb
+
+# load test credentials
+infra/k6/tokens.json

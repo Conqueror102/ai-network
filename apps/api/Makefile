@@ -6,5 +6,5 @@ lint:     ; uv run ruff check . && uv run ruff format --check . && uv run mypy a
 fmt:      ; uv run ruff check --fix . && uv run ruff format .
 migrate:  ; uv run alembic upgrade head
 revision: ; uv run alembic revision --autogenerate -m "$(m)"
-seed:     ; uv run python -m scripts.seed_event
+seed:     ; uv run python -m scripts.seed_event $(n)
 evals:    ; uv run pytest -q tests/evals

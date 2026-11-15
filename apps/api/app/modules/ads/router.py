@@ -4,6 +4,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
 from app.core import ratelimit
+from app.core.audit import Audit
 from app.core.auth import StaffUser
 from app.core.db.engine import DbSession
 from app.modules.ads import schemas, service
@@ -56,6 +57,7 @@ async def report(sponsor_id: str, ctx: OrgStaff, session: DbSession) -> schemas.
 
 
 @router.post("/internal/ads/{placement_id}/release", status_code=204)
-async def release(placement_id: str, _: StaffUser, session: DbSession) -> Response:
+async def release(placement_id: str, _: StaffUser, session: DbSession, audit: Audit) -> Response:
+    audit.log("ads.release", "ad_placement", placement_id)
     await service.release_held(session, placement_id)
     return Response(status_code=204)

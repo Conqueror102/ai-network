@@ -131,3 +131,18 @@ async def mark_died() -> None:
             await matching.record_signal(
                 session, conv.event_id, conv.user_a, conv.user_b, "chat_died"
             )
+
+
+MESSAGE_KEEP = timedelta(days=730)
+
+
+@jobs.cron("chat.retention", hour={2}, minute={30})
+async def retention() -> None:
+    """Messages are kept for 24 months, then deleted (02 retention; shown in-app)."""
+    from sqlalchemy import delete
+
+    async with UnitOfWork() as session:
+        res = await session.execute(
+            delete(Message).where(Message.created_at < clock.now() - MESSAGE_KEEP)
+        )
+    log.info("chat_retention", messages=res.rowcount or 0)  # type: ignore[attr-defined]

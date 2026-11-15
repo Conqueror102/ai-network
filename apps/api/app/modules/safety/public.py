@@ -100,12 +100,37 @@ async def attach_report_context(
 WAVE_PAUSE = "wave_pause"
 EVENT_SUSPENDED = "event_suspended"
 
+
+async def export_user(session: AsyncSession, user_id: str) -> dict[str, Any]:
+    """Blocks and reports the user made. Reports made about them are not included:
+    that would reveal who reported them."""
+    from app.modules.safety.models import Report
+
+    blocks = (await session.scalars(select(Block).where(Block.user_id == user_id))).all()
+    reports = (await session.scalars(select(Report).where(Report.reporter_id == user_id))).all()
+    return {
+        "blocked": [{"user_id": b.blocked_id, "at": b.created_at.isoformat()} for b in blocks],
+        "reports_made": [
+            {
+                "subject_id": r.subject_id,
+                "event_id": r.event_id,
+                "reason": r.reason,
+                "detail": r.detail,
+                "status": r.status,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in reports
+        ],
+    }
+
+
 __all__ = [
     "EVENT_SUSPENDED",
     "WAVE_PAUSE",
     "attach_report_context",
     "block_between",
     "blocked_ids",
+    "export_user",
     "has_open_flag",
     "i_have_not_blocked",
     "is_blocked_pair",

@@ -8,6 +8,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.errors import envelope
 from app.core.ids import new_id
+from app.core.observability import LATENCY, REQUESTS
 
 log = structlog.get_logger()
 
@@ -55,7 +56,12 @@ class RequestContextMiddleware:
             await self.app(scope, receive, send_wrapper)
         finally:
             path = scope["path"]
-            if path not in ("/livez", "/readyz"):
+            if path not in ("/livez", "/readyz", "/metrics"):
+                # label by route template, never by raw path: ids would explode cardinality
+                route = getattr(scope.get("route"), "path", None) or "unmatched"
+                elapsed = time.perf_counter() - start
+                REQUESTS.labels(scope["method"], route, str(status["code"])).inc()
+                LATENCY.labels(route).observe(elapsed)
                 log.info(
                     "request",
                     method=scope["method"],

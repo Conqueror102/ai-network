@@ -3,6 +3,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Response
 
 from app.core import jobs
+from app.core.audit import Audit
 from app.core.auth import StaffUser
 from app.core.db.engine import DbSession
 from app.modules.events.public import CheckedIn
@@ -49,7 +50,10 @@ async def get_config(_: StaffUser, session: DbSession) -> schemas.ConfigOut:
 
 @router.put("/internal/matching/config", response_model=schemas.ConfigOut)
 async def put_config(
-    body: schemas.ConfigIn, staff: StaffUser, session: DbSession
+    body: schemas.ConfigIn, staff: StaffUser, session: DbSession, audit: Audit
 ) -> schemas.ConfigOut:
+    audit.log(
+        "matching.config_set", "matching_config", "default", meta={"keys": sorted(body.values)}
+    )
     cfg, overrides = await service.set_config(session, body.values, staff.user_id)
     return schemas.ConfigOut(values=asdict(cfg), overrides=overrides)
