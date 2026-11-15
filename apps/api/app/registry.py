@@ -13,6 +13,8 @@ MODULES: list[str] = [
     "profiles",
     "connections",
     "matching",
+    "chat",
+    "waves",
 ]
 
 

@@ -19,6 +19,21 @@ def not_blocked(me: str, other_user_column: Any) -> ColumnElement[bool]:
     )
 
 
+def i_have_not_blocked(me: str, other_user_column: Any) -> ColumnElement[bool]:
+    """One-directional: true unless `me` blocked the row's user. For views where hiding
+    rows in the other direction would reveal that the viewer was blocked."""
+    return ~exists().where(and_(Block.user_id == me, Block.blocked_id == other_user_column))
+
+
+def block_between(col_a: Any, col_b: Any) -> ColumnElement[bool]:
+    """Correlated predicate for `exists().where(...)`: a block either way between two
+    user columns of the outer row."""
+    return or_(
+        and_(Block.user_id == col_a, Block.blocked_id == col_b),
+        and_(Block.user_id == col_b, Block.blocked_id == col_a),
+    )
+
+
 async def blocked_ids(session: AsyncSession, me: str) -> set[str]:
     """Everyone `me` blocked or was blocked by."""
     rows = (
@@ -71,4 +86,29 @@ async def raise_flag(session: AsyncSession, user_id: str, event_id: str | None, 
     )
 
 
-__all__ = ["blocked_ids", "has_open_flag", "is_blocked_pair", "not_blocked", "raise_flag"]
+async def attach_report_context(
+    session: AsyncSession, report_id: str, reporter_id: str, context: dict[str, Any]
+) -> None:
+    """Chat attaches the last messages of a reported conversation (01 §14.2)."""
+    from app.modules.safety.models import Report
+
+    report = await session.get(Report, report_id)
+    if report is not None and report.reporter_id == reporter_id and report.context is None:
+        report.context = context
+
+
+WAVE_PAUSE = "wave_pause"
+EVENT_SUSPENDED = "event_suspended"
+
+__all__ = [
+    "EVENT_SUSPENDED",
+    "WAVE_PAUSE",
+    "attach_report_context",
+    "block_between",
+    "blocked_ids",
+    "has_open_flag",
+    "i_have_not_blocked",
+    "is_blocked_pair",
+    "not_blocked",
+    "raise_flag",
+]
