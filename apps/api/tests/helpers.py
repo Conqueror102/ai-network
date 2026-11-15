@@ -97,3 +97,48 @@ async def check_in(client, owner: dict, event_id: str, user: dict) -> None:
         f"/v1/events/{event_id}/checkin", json={"qr_token": token}, headers=user["headers"]
     )
     assert r.status_code == 200, r.text
+
+
+async def join(
+    client,
+    owner: dict,
+    event_id: str,
+    *,
+    name: str,
+    headline: str = "",
+    offer: str = "",
+    goals: list[dict] | None = None,
+    bio: str | None = None,
+    visibility: str = "directory",
+    **me,
+) -> dict:
+    """Sign up, check in, create the event card and goals, and run the embedding job."""
+    from app.core import jobs, outbox
+
+    user = await sign_up(client, name=name)
+    patch = {k: v for k, v in {"bio": bio, **me}.items() if v}
+    if patch:
+        r = await client.patch("/v1/me", json=patch, headers=user["headers"])
+        assert r.status_code == 200, r.text
+    await check_in(client, owner, event_id, user)
+    r = await client.put(
+        f"/v1/events/{event_id}/profile",
+        json={
+            "display_name": name,
+            "headline": headline or None,
+            "offer_text": offer or None,
+            "visibility": visibility,
+        },
+        headers=user["headers"],
+    )
+    assert r.status_code == 200, r.text
+    for i, goal in enumerate(goals or [], start=1):
+        r = await client.post(
+            f"/v1/events/{event_id}/goals", json={"priority": i, **goal}, headers=user["headers"]
+        )
+        assert r.status_code == 201, r.text
+    await outbox.drain()
+    await jobs.run_pending()
+    await outbox.drain()
+    await jobs.run_pending()
+    return user

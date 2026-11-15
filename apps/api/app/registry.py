@@ -9,6 +9,9 @@ MODULES: list[str] = [
     "identity",
     "organizers",
     "events",
+    "safety",
+    "profiles",
+    "connections",
 ]
 
 
