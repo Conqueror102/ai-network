@@ -3,12 +3,14 @@
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.events import public as events
 from app.modules.identity import public as identity
 from app.modules.profiles.models import EventProfile, Goal
 from app.modules.profiles.schemas import EventCardOut
+from app.modules.safety import public as safety
 
 
 @dataclass(frozen=True)
@@ -135,11 +137,105 @@ async def visibility_of(session: AsyncSession, event_id: str, user_id: str) -> s
     ).scalar_one_or_none()
 
 
+def _people(event_id: str, me: str, exclude: set[str]) -> list[Any]:
+    """The people `me` may be shown in this event (05 §2 stage 1, minus caller-owned
+    exclusions): checked in, not hidden, not blocked either way, not self."""
+    conds: list[Any] = [
+        EventProfile.event_id == event_id,
+        EventProfile.visibility != "hidden",
+        EventProfile.user_id != me,
+        EventProfile.user_id.in_(events.checked_in_subquery(event_id)),
+        safety.not_blocked(me, EventProfile.user_id),
+    ]
+    if exclude:
+        conds.append(EventProfile.user_id.not_in(exclude))
+    return conds
+
+
+async def nearest_offers(
+    session: AsyncSession,
+    event_id: str,
+    me: str,
+    vector: list[float],
+    *,
+    exclude: set[str],
+    limit: int = 40,
+) -> list[tuple[str, str, float]]:
+    """05 §3 candidate generation: the offers and profiles closest to an ask.
+    Returns (user_id, "profile" | goal id, cosine similarity), best first."""
+    conds = _people(event_id, me, exclude)
+    d_profile = EventProfile.profile_embedding.cosine_distance(vector)
+    d_goal = Goal.offer_embedding.cosine_distance(vector)
+    by_profile = (
+        select(EventProfile.user_id, literal("profile"), d_profile)
+        .where(*conds, EventProfile.profile_embedding.is_not(None))
+        .order_by(d_profile)
+        .limit(limit)
+    )
+    by_goal = (
+        select(EventProfile.user_id, Goal.id, d_goal)
+        .join(Goal, Goal.event_profile_id == EventProfile.id)
+        .where(*conds, Goal.status == "active", Goal.offer_embedding.is_not(None))
+        .order_by(d_goal)
+        .limit(limit)
+    )
+    rows = [*(await session.execute(by_profile)).all(), *(await session.execute(by_goal)).all()]
+    out = []
+    for user_id, source, dist in rows:
+        sim = 0.0 if dist is None or dist != dist else 1.0 - float(dist)  # NaN: zero vector
+        out.append((str(user_id), str(source), sim))
+    return sorted(out, key=lambda r: -r[2])[:limit]
+
+
+async def showable_ids(
+    session: AsyncSession, event_id: str, me: str, user_ids: list[str]
+) -> set[str]:
+    """Subset of `user_ids` that `me` may see in this event right now."""
+    if not user_ids:
+        return set()
+    conds = _people(event_id, me, set())
+    return set(
+        (
+            await session.execute(
+                select(EventProfile.user_id).where(*conds, EventProfile.user_id.in_(user_ids))
+            )
+        ).scalars()
+    )
+
+
+async def profile_count(session: AsyncSession, event_id: str) -> int:
+    from sqlalchemy import func
+
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(EventProfile)
+                .where(EventProfile.event_id == event_id, EventProfile.visibility != "hidden")
+            )
+        ).scalar_one()
+    )
+
+
+async def user_ids_with_profile(session: AsyncSession, event_id: str) -> list[str]:
+    return list(
+        (
+            await session.execute(
+                select(EventProfile.user_id).where(EventProfile.event_id == event_id)
+            )
+        ).scalars()
+    )
+
+
 __all__ = [
     "EventCardOut",
     "GoalData",
     "ProfileData",
     "get_event_cards",
     "load_profiles",
+    "nearest_offers",
+    "profile_count",
+    "showable_ids",
+    "user_ids_with_profile",
     "visibility_of",
 ]

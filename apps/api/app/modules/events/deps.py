@@ -11,6 +11,7 @@ from app.core.errors import Forbidden, NotFound
 from app.modules.events import service
 from app.modules.events.models import Event
 from app.modules.organizers import public as organizers
+from app.modules.safety import public as safety
 
 
 @dataclass
@@ -27,6 +28,8 @@ async def require_checkin(event_id: str, user: CurrentUser, session: DbSession) 
         raise NotFound
     if not await service.is_checked_in(session, event_id, user.user_id):
         raise Forbidden("Check in at the event to unlock this", code="checkin_required")
+    if await safety.has_open_flag(session, user.user_id, event_id, safety.EVENT_SUSPENDED):
+        raise Forbidden("Your access to this event is suspended", code="event_access_suspended")
     return EventCtx(event, user)
 
 
