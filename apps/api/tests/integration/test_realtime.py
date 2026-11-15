@@ -58,7 +58,8 @@ async def test_socket_receives_only_its_own_events_and_expires(client):
     sock = Socket()
     pubsub = get_redis().pubsub()
     await pubsub.subscribe(*mine)
-    expires = int(clock.now().timestamp()) + 1
+    # +2 because int() truncates: the socket must live at least one full second
+    expires = int(clock.now().timestamp()) + 2
     task = asyncio.create_task(
         service.pump(
             pubsub,

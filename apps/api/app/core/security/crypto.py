@@ -10,7 +10,9 @@ from app.core.config import get_settings
 
 def _keys() -> dict[str, bytes]:
     s = get_settings()
-    return {s.msg_enc_kid: bytes.fromhex(s.msg_enc_key.get_secret_value())}
+    keys = {kid: bytes.fromhex(k.get_secret_value()) for kid, k in s.msg_enc_old_keys.items()}
+    keys[s.msg_enc_kid] = bytes.fromhex(s.msg_enc_key.get_secret_value())
+    return keys
 
 
 def encrypt(plaintext: str) -> str:

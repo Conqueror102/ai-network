@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     otp_sms_country_allowlist: list[str] = Field(default_factory=lambda: ["+234"])
     msg_enc_key: SecretStr = SecretStr("00" * 32)  # hex, 32 bytes
     msg_enc_kid: str = "m1"
+    # retired keys, still needed to read old rows: {"m1": "<hex>"} (rotation runbook)
+    msg_enc_old_keys: dict[str, SecretStr] = Field(default_factory=dict)
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     trusted_hosts: list[str] = Field(default_factory=lambda: ["*"])
@@ -81,6 +83,7 @@ class Settings(BaseSettings):
     r2_bucket: str = "ainet-media"
     cdn_base_url: str = "https://cdn.example.com"
     sentry_dsn: SecretStr | None = None
+    metrics_token: SecretStr | None = None  # bearer for GET /metrics; unset = 404
 
     # AI routing: task -> model chain (06 §1a). Overridable via env JSON.
     ai_routing: dict[str, list[str]] = Field(
@@ -113,7 +116,12 @@ class Settings(BaseSettings):
             if self.msg_enc_key.get_secret_value() == "00" * 32:
                 problems.append("MSG_ENC_KEY is the dev default")
             if self.env == "prod":
-                for name in ("llm_provider", "otp_primary", "storage_provider"):
+                for name in (
+                    "llm_provider",
+                    "otp_primary",
+                    "storage_provider",
+                    "payments_provider",
+                ):
                     if getattr(self, name) == "fake":
                         problems.append(f"{name.upper()} is fake")
             if problems:

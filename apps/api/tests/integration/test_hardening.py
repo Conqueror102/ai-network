@@ -186,3 +186,21 @@ async def test_declined_wave_content_is_scrubbed_after_30_days(client, session):
 async def test_retention_crons_are_registered():
     names = {c.name for c in jobs.CRONS}
     assert {"identity.retention", "waves.retention", "chat.retention", "ai.retention"} <= names
+
+
+async def test_metrics_needs_its_token(client, monkeypatch):
+    from pydantic import SecretStr
+
+    from app.core.config import get_settings
+
+    assert (await client.get("/metrics")).status_code == 404  # no token configured
+    monkeypatch.setattr(get_settings(), "metrics_token", SecretStr("scrape-me"))
+    assert (await client.get("/metrics")).status_code == 404
+    bad = await client.get("/metrics", headers={"Authorization": "Bearer nope"})
+    assert bad.status_code == 404
+    await client.get("/v1/events/evt_does_not_exist")
+    ok = await client.get("/metrics", headers={"Authorization": "Bearer scrape-me"})
+    assert ok.status_code == 200
+    # labelled by route template, so ids never become label values
+    assert 'route="/events/{event_id}"' in ok.text
+    assert "evt_does_not_exist" not in ok.text
