@@ -1,0 +1,13 @@
+from typing import Protocol
+
+
+class ObjectStorage(Protocol):
+    async def presign_put(
+        self, key: str, *, content_type: str, max_bytes: int, expires_s: int = 300
+    ) -> str: ...
+
+    async def exists(self, key: str) -> bool: ...
+
+    def public_url(self, key: str) -> str: ...
+
+    async def delete(self, key: str) -> None: ...
