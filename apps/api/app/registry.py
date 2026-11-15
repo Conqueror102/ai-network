@@ -15,6 +15,8 @@ MODULES: list[str] = [
     "matching",
     "chat",
     "waves",
+    "realtime",
+    "wingman",
 ]
 
 

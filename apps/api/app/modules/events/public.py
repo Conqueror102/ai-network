@@ -84,6 +84,19 @@ async def checked_in_count(session: AsyncSession, event_id: str) -> int:
     )
 
 
+async def live_checked_in_event_ids(session: AsyncSession, user_id: str) -> list[str]:
+    return list(
+        (
+            await session.execute(
+                select(Event.id)
+                .join(Checkin, Checkin.event_id == Event.id)
+                .where(Checkin.user_id == user_id, Event.status == "live")
+                .distinct()
+            )
+        ).scalars()
+    )
+
+
 async def checked_in_today(session: AsyncSession, event_id: str, user_ids: list[str]) -> set[str]:
     if not user_ids:
         return set()
@@ -121,5 +134,6 @@ __all__ = [
     "get_info",
     "get_infos",
     "is_checked_in",
+    "live_checked_in_event_ids",
     "live_event_ids",
 ]
