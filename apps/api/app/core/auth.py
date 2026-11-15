@@ -7,7 +7,7 @@ import structlog
 from fastapi import Depends, Request
 from redis.exceptions import RedisError
 
-from app.core import ratelimit
+from app.core import presence, ratelimit
 from app.core.config import get_settings
 from app.core.errors import NotFound, Unauthenticated
 from app.core.redis import get_redis, key
@@ -33,6 +33,7 @@ async def current_principal(request: Request) -> Principal:
     structlog.contextvars.bind_contextvars(user_id=principal.user_id)
     # global default: 120 req/min per user (03 §12)
     await ratelimit.hit("global", principal.user_id, limit=120, window_s=60)
+    await presence.touch(principal.user_id)
     return principal
 
 

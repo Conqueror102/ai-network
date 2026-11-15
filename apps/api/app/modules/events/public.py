@@ -84,6 +84,24 @@ async def checked_in_count(session: AsyncSession, event_id: str) -> int:
     )
 
 
+async def checked_in_today(session: AsyncSession, event_id: str, user_ids: list[str]) -> set[str]:
+    if not user_ids:
+        return set()
+    from app.core import clock
+
+    return set(
+        (
+            await session.execute(
+                select(Checkin.user_id).where(
+                    Checkin.event_id == event_id,
+                    Checkin.user_id.in_(user_ids),
+                    Checkin.day == clock.now().date(),
+                )
+            )
+        ).scalars()
+    )
+
+
 def checked_in_subquery(event_id: str):  # type: ignore[no-untyped-def]
     """`user_id IN (...)` filter for people queries scoped to an event."""
     return select(Checkin.user_id).where(Checkin.event_id == event_id)
@@ -97,6 +115,7 @@ __all__ = [
     "OrgStaff",
     "checked_in_count",
     "checked_in_subquery",
+    "checked_in_today",
     "checked_in_user_ids",
     "events_with_status",
     "get_info",
