@@ -32,6 +32,7 @@ class FakePayments:
         metadata: dict[str, str],
     ) -> Checkout:
         ref = f"fakepay_{reference}"
+        self.checkouts = [*getattr(self, "checkouts", []), reference]
         self.payments[ref] = PaymentStatus(ref, "pending", amount_minor, currency)
         return Checkout(ref, f"https://fake-pay.local/checkout/{ref}")
 
@@ -43,7 +44,15 @@ class FakePayments:
         if not hmac.compare_digest(self.sign(body), headers.get("x-fake-signature", "")):
             raise WebhookInvalid("bad signature")
         data: dict[str, Any] = json.loads(body)
-        return WebhookEvent(data["id"], data["type"], data.get("provider_ref"), data)
+        return WebhookEvent(
+            data["id"],
+            data["type"],
+            data.get("provider_ref"),
+            data,
+            reference=data.get("reference"),
+            amount_minor=data.get("amount_minor"),
+            currency=data.get("currency"),
+        )
 
     async def get_payment(self, provider_ref: str) -> PaymentStatus:
         return self.payments[provider_ref]
@@ -52,4 +61,5 @@ class FakePayments:
         self, provider_ref: str, *, amount_minor: int | None = None, idempotency_key: str
     ) -> None:
         self.refunds.append(provider_ref)
-        self.payments[provider_ref].status = "refunded"
+        if provider_ref in self.payments:
+            self.payments[provider_ref].status = "refunded"

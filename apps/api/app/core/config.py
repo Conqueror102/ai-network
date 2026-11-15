@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     bachs_api_key: SecretStr | None = None
     bachs_webhook_secret: SecretStr | None = None
     bachs_base_url: str = "https://api.bachs.io"
+    web_base_url: str = "http://localhost:3000"
     r2_account_id: str | None = None
     r2_access_key_id: SecretStr | None = None
     r2_secret_access_key: SecretStr | None = None

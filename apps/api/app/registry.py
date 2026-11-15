@@ -17,6 +17,10 @@ MODULES: list[str] = [
     "waves",
     "realtime",
     "wingman",
+    "notifications",
+    "sponsors",
+    "ads",
+    "billing",
 ]
 
 

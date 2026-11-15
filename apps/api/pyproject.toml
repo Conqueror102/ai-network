@@ -94,3 +94,10 @@ source_modules = ["app.modules"]
 forbidden_modules = ["app.adapters.llm", "app.adapters.embeddings"]
 allow_indirect_imports = true
 ignore_imports = ["app.modules.ai.** -> app.adapters.llm.**", "app.modules.ai.** -> app.adapters.embeddings.**"]
+
+[[tool.importlinter.contracts]]
+name = "money never ranks: matching, waves, profiles and chat cannot import sponsors, ads or billing"
+type = "forbidden"
+source_modules = ["app.modules.matching", "app.modules.waves", "app.modules.profiles", "app.modules.chat", "app.modules.connections"]
+forbidden_modules = ["app.modules.sponsors", "app.modules.ads", "app.modules.billing"]
+allow_indirect_imports = false
