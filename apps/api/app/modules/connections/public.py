@@ -33,4 +33,20 @@ async def connected_peer_ids(session: AsyncSession, event_id: str, user_id: str)
     )
 
 
-__all__ = ["connected_peer_ids", "ensure_pair", "met_count"]
+async def export_user(session: AsyncSession, user_id: str) -> list[dict[str, object]]:
+    """The user's own address book: who they connected with and their private notes.
+    Contact details other people shared stay out: they are those people's data."""
+    rows = (await session.scalars(select(Connection).where(Connection.user_id == user_id))).all()
+    return [
+        {
+            "peer_id": c.peer_id,
+            "event_id": c.event_id,
+            "met_confirmed_at": c.met_confirmed_at.isoformat() if c.met_confirmed_at else None,
+            "notes": c.notes,
+            "created_at": c.created_at.isoformat(),
+        }
+        for c in rows
+    ]
+
+
+__all__ = ["connected_peer_ids", "ensure_pair", "export_user", "met_count"]

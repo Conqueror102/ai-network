@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Response
 
+from app.core.audit import Audit
 from app.core.auth import CurrentUser
 from app.core.db.engine import DbSession
 from app.modules.organizers import service
@@ -28,16 +29,31 @@ async def members(organizer_id: str, user: CurrentUser, session: DbSession) -> l
 
 @router.post("/organizers/{organizer_id}/members", response_model=MemberOut, status_code=201)
 async def add_member(
-    organizer_id: str, body: MemberIn, user: CurrentUser, session: DbSession
+    organizer_id: str, body: MemberIn, user: CurrentUser, session: DbSession, audit: Audit
 ) -> MemberOut:
     await service.require_role(session, organizer_id, user.user_id, "owner")
+    audit.log(
+        "organizer.member_add",
+        "organizer",
+        organizer_id,
+        role="organizer",
+        org_id=organizer_id,
+        meta={"role": body.role},
+    )
     return await service.add_member(session, organizer_id, body)
 
 
 @router.delete("/organizers/{organizer_id}/members/{member_id}", status_code=204)
 async def remove_member(
-    organizer_id: str, member_id: str, user: CurrentUser, session: DbSession
+    organizer_id: str, member_id: str, user: CurrentUser, session: DbSession, audit: Audit
 ) -> Response:
     await service.require_role(session, organizer_id, user.user_id, "owner")
+    audit.log(
+        "organizer.member_remove",
+        "organizer_member",
+        member_id,
+        role="organizer",
+        org_id=organizer_id,
+    )
     await service.remove_member(session, organizer_id, member_id)
     return Response(status_code=204)

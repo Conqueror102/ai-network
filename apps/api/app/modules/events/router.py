@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request, Response
 
 from app.core import ratelimit
+from app.core.audit import Audit
 from app.core.auth import CurrentUser
 from app.core.db.engine import DbSession
 from app.core.db.pagination import Page, clamp_limit
@@ -107,7 +108,18 @@ async def patch_event(
 
 
 @router.post("/events/{event_id}/status", response_model=schemas.EventOut)
-async def set_status(body: schemas.StatusIn, ctx: OrgStaff, session: DbSession) -> schemas.EventOut:
+async def set_status(
+    body: schemas.StatusIn, ctx: OrgStaff, session: DbSession, audit: Audit
+) -> schemas.EventOut:
+    audit.log(
+        "event.status_set",
+        "event",
+        ctx.event.id,
+        role="organizer",
+        org_id=ctx.event.organizer_id,
+        event_id=ctx.event.id,
+        meta={"status": body.status},
+    )
     return service.to_out(
         await service.set_status(session, ctx.event, body.status), show_address=True
     )
@@ -123,10 +135,21 @@ async def door_qr(ctx: OrgStaff) -> schemas.DoorQrOut:
 async def applications(
     ctx: OrgStaff,
     session: DbSession,
+    audit: Audit,
     status: Annotated[str | None, Query(pattern="^(pending|approved|rejected)$")] = None,
     cursor: Cursor = None,
     limit: Limit = None,
 ) -> Page[schemas.ApplicationOut]:
+    # reading applicant details is a sensitive read: the entry rides on its own commit
+    audit.log(
+        "event.applications_read",
+        "event",
+        ctx.event.id,
+        role="organizer",
+        org_id=ctx.event.organizer_id,
+        event_id=ctx.event.id,
+    )
+    await session.commit()
     items, nxt = await service.list_applications(
         session, ctx.event.id, status, cursor, clamp_limit(limit)
     )
@@ -137,8 +160,17 @@ async def applications(
     "/events/{event_id}/applications/{application_id}/decide", response_model=schemas.ApplyOut
 )
 async def decide(
-    application_id: str, body: schemas.DecideIn, ctx: OrgStaff, session: DbSession
+    application_id: str, body: schemas.DecideIn, ctx: OrgStaff, session: DbSession, audit: Audit
 ) -> schemas.ApplyOut:
+    audit.log(
+        "event.application_decide",
+        "event_application",
+        application_id,
+        role="organizer",
+        org_id=ctx.event.organizer_id,
+        event_id=ctx.event.id,
+        meta={"approve": body.approve},
+    )
     app = await service.decide_application(
         session, application_id, ctx.event.id, body.approve, ctx.user.user_id
     )

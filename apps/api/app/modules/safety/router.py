@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Query, Response
 
 from app.core import ratelimit
+from app.core.audit import Audit
 from app.core.auth import CurrentUser, StaffUser
 from app.core.db.engine import DbSession
 from app.core.db.pagination import Page, clamp_limit
@@ -54,8 +55,9 @@ async def reports(
 
 @router.post("/internal/moderation/reports/{report_id}/action", response_model=schemas.ReportOut)
 async def act(
-    report_id: str, body: schemas.ActionIn, staff: StaffUser, session: DbSession
+    report_id: str, body: schemas.ActionIn, staff: StaffUser, session: DbSession, audit: Audit
 ) -> schemas.ReportOut:
+    audit.log("moderation.report_action", "report", report_id, meta={"action": body.action})
     return _out(await service.act_on_report(session, staff.user_id, report_id, body.action))
 
 
@@ -70,6 +72,7 @@ async def flags(_: StaffUser, session: DbSession) -> list[schemas.FlagOut]:
 
 
 @router.post("/internal/moderation/flags/{flag_id}/resolve", status_code=204)
-async def resolve_flag(flag_id: str, _: StaffUser, session: DbSession) -> Response:
+async def resolve_flag(flag_id: str, _: StaffUser, session: DbSession, audit: Audit) -> Response:
+    audit.log("moderation.flag_resolve", "moderation_flag", flag_id)
     await service.resolve_flag(session, flag_id)
     return Response(status_code=204)

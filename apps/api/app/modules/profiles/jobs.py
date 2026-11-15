@@ -36,3 +36,14 @@ async def embed_profile(profile_id: str) -> None:
         outbox.emit(
             session, "profiles.embedded", {"event_id": profile.event_id, "user_id": profile.user_id}
         )
+
+
+@outbox.subscribe("identity.user_purged")
+async def on_user_purged(payload: dict[str, object]) -> None:
+    """Event profiles, goals and their embeddings go with the account (08 §3)."""
+    from sqlalchemy import delete
+
+    async with UnitOfWork() as session:
+        await session.execute(
+            delete(EventProfile).where(EventProfile.user_id == payload["user_id"])
+        )

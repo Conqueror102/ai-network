@@ -41,6 +41,8 @@ class User(Base, Timestamps):
     is_staff: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # set by the retention job once the PII of a deleted account is gone (02 retention)
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         CheckConstraint(
             "phone IS NOT NULL OR email IS NOT NULL OR deleted_at IS NOT NULL",

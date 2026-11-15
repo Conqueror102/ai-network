@@ -21,6 +21,8 @@ MODULES: list[str] = [
     "sponsors",
     "ads",
     "billing",
+    "privacy",
+    "admin",
 ]
 
 
@@ -36,6 +38,7 @@ def _try_import(path: str) -> object | None:
 def load_models() -> None:
     """Import every module's models so Base.metadata is complete (Alembic, tests)."""
     importlib.import_module("app.core.outbox")
+    importlib.import_module("app.core.audit")
     for name in MODULES:
         _try_import(f"app.modules.{name}.models")
 

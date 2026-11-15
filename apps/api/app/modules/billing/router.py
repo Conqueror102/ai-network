@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, Query, Request
 from app.adapters import factory
 from app.adapters.payments.port import WebhookInvalid
 from app.core import idempotency, ratelimit
+from app.core.audit import Audit
 from app.core.auth import CurrentUser, StaffUser
 from app.core.db.engine import DbSession
 from app.core.db.pagination import Page, clamp_limit
@@ -69,16 +70,29 @@ async def webhook(provider: str, request: Request, session: DbSession) -> dict[s
 
 @router.post("/internal/billing/invoices", response_model=schemas.InvoiceOut, status_code=201)
 async def create_invoice(
-    body: schemas.InvoiceIn, staff: StaffUser, session: DbSession
+    body: schemas.InvoiceIn, staff: StaffUser, session: DbSession, audit: Audit
 ) -> schemas.InvoiceOut:
+    audit.log(
+        "billing.invoice_create",
+        "organizer",
+        body.organizer_id,
+        org_id=body.organizer_id,
+        meta={"amount_minor": body.amount_minor, "currency": body.currency},
+    )
     return service.invoice_out(await service.create_invoice(session, staff.user_id, body))
 
 
 @router.post("/internal/billing/invoices/{invoice_id}/mark-paid", response_model=schemas.InvoiceOut)
-async def mark_paid(invoice_id: str, _: StaffUser, session: DbSession) -> schemas.InvoiceOut:
+async def mark_paid(
+    invoice_id: str, _: StaffUser, session: DbSession, audit: Audit
+) -> schemas.InvoiceOut:
+    audit.log("billing.mark_paid", "invoice", invoice_id)
     return service.invoice_out(await service.mark_paid_manually(session, invoice_id))
 
 
 @router.post("/internal/billing/invoices/{invoice_id}/refund", response_model=schemas.InvoiceOut)
-async def refund(invoice_id: str, _: StaffUser, session: DbSession) -> schemas.InvoiceOut:
+async def refund(
+    invoice_id: str, _: StaffUser, session: DbSession, audit: Audit
+) -> schemas.InvoiceOut:
+    audit.log("billing.refund", "invoice", invoice_id)
     return service.invoice_out(await service.refund(session, invoice_id))

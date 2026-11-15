@@ -227,10 +227,46 @@ async def user_ids_with_profile(session: AsyncSession, event_id: str) -> list[st
     )
 
 
+async def export_user(session: AsyncSession, user_id: str) -> list[dict[str, Any]]:
+    """Every event profile and goal the user wrote. Embeddings are derived data and
+    are left out."""
+    profiles = (
+        await session.scalars(select(EventProfile).where(EventProfile.user_id == user_id))
+    ).all()
+    out: list[dict[str, Any]] = []
+    for p in profiles:
+        goals = (
+            await session.scalars(
+                select(Goal).where(Goal.event_profile_id == p.id).order_by(Goal.priority)
+            )
+        ).all()
+        out.append(
+            {
+                "event_id": p.event_id,
+                "display_name": p.display_name,
+                "headline": p.headline,
+                "offer_text": p.offer_text,
+                "visibility": p.visibility,
+                "goals": [
+                    {
+                        "intent": g.intent,
+                        "raw_input": g.raw_input,
+                        "offer": g.offer,
+                        "priority": g.priority,
+                        "status": g.status,
+                    }
+                    for g in goals
+                ],
+            }
+        )
+    return out
+
+
 __all__ = [
     "EventCardOut",
     "GoalData",
     "ProfileData",
+    "export_user",
     "get_event_cards",
     "load_profiles",
     "nearest_offers",

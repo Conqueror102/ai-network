@@ -88,4 +88,47 @@ async def counts(session: AsyncSession, event_id: str) -> dict[str, int]:
     return {"conversations_started": int(started), "meetings_planned": int(meetings)}
 
 
-__all__ = ["assist_context", "counts", "open_conversation", "preview"]
+async def export_user(session: AsyncSession, user_id: str) -> list[dict[str, object]]:
+    """The user's conversations with the messages they wrote. The other person's
+    messages are that person's data and are not part of this export."""
+    from sqlalchemy import or_
+
+    from app.modules.chat.models import Message
+
+    convs = (
+        await session.scalars(
+            select(Conversation).where(
+                or_(Conversation.user_a == user_id, Conversation.user_b == user_id)
+            )
+        )
+    ).all()
+    out: list[dict[str, object]] = []
+    for c in convs:
+        mine = (
+            await session.scalars(
+                select(Message)
+                .where(Message.conversation_id == c.id, Message.sender_id == user_id)
+                .order_by(Message.id)
+            )
+        ).all()
+        out.append(
+            {
+                "id": c.id,
+                "event_id": c.event_id,
+                "with_user": c.user_b if c.user_a == user_id else c.user_a,
+                "created_at": c.created_at.isoformat(),
+                "my_messages": [
+                    {
+                        "id": m.id,
+                        "kind": m.kind,
+                        "body": m.body,
+                        "sent_at": m.created_at.isoformat(),
+                    }
+                    for m in mine
+                ],
+            }
+        )
+    return out
+
+
+__all__ = ["assist_context", "counts", "export_user", "open_conversation", "preview"]

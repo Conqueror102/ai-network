@@ -17,3 +17,14 @@ async def forget_shared_contact(payload: dict[str, Any]) -> None:
             .where(Connection.peer_id == payload["user_id"])
             .values(shared=None, followup_drafts=[])
         )
+
+
+@outbox.subscribe("identity.user_purged")
+async def drop_address_book(payload: dict[str, Any]) -> None:
+    """The purged user's own address book (their notes and what others shared with
+    them) is deleted. Other people keep their row for the same pair, minus contact
+    details, which were wiped at delete time."""
+    from sqlalchemy import delete
+
+    async with UnitOfWork() as session:
+        await session.execute(delete(Connection).where(Connection.user_id == payload["user_id"]))

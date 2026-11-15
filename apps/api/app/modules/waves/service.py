@@ -5,6 +5,7 @@ inbox cap, expired or blocked. `sent_view` is the single place that renders a wa
 its sender, and it only knows "pending" and "accepted".
 """
 
+from datetime import datetime
 from typing import Any
 
 import structlog
@@ -397,3 +398,57 @@ async def counts(session: AsyncSession, event_id: str) -> dict[str, int]:
         ).all()
     )
     return {"sent": sum(rows.values()), "accepted": rows.get("accepted", 0)}
+
+
+async def scrub_resolved(session: AsyncSession, before: datetime) -> int:
+    res = await session.execute(
+        update(Wave)
+        .where(
+            Wave.status.in_(("not_now", "expired")),
+            Wave.resolved_at < before,
+            Wave.card != {},
+        )
+        .values(card={}, note=None)
+    )
+    return res.rowcount or 0  # type: ignore[attr-defined]
+
+
+async def forget_sender(session: AsyncSession, user_id: str) -> None:
+    """A purged account's frozen cards and notes go, whatever the wave's status."""
+    await session.execute(update(Wave).where(Wave.from_user == user_id).values(card={}, note=None))
+
+
+async def export_user(session: AsyncSession, user_id: str) -> dict[str, Any]:
+    """What this user sent, and only the waves they answered or still see. Declines by
+    other people are not theirs to learn, so sent waves show no outcome beyond
+    pending or accepted (same masking as the Sent tab)."""
+    sent = (await session.scalars(select(Wave).where(Wave.from_user == user_id))).all()
+    received = (
+        await session.scalars(
+            select(Wave).where(Wave.to_user == user_id, Wave.delivered_at.is_not(None))
+        )
+    ).all()
+    return {
+        "sent": [
+            {
+                "id": w.id,
+                "event_id": w.event_id,
+                "to_user": w.to_user,
+                "note": w.note,
+                "status": "accepted" if w.status == "accepted" else "pending",
+                "created_at": w.created_at.isoformat(),
+            }
+            for w in sent
+        ],
+        "received": [
+            {
+                "id": w.id,
+                "event_id": w.event_id,
+                "from_user": w.from_user,
+                "note": w.note,
+                "status": w.status,
+                "created_at": w.created_at.isoformat(),
+            }
+            for w in received
+        ],
+    }

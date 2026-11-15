@@ -124,11 +124,38 @@ async def set_suspended(session: AsyncSession, user_id: str, suspended: bool) ->
         await revoke_user(user_id)
 
 
+async def export_user(session: AsyncSession, user_id: str) -> dict[str, object]:
+    """The account record as the user gave it to us. Raises 404 for deleted accounts."""
+    u = await session.get(User, user_id)
+    if u is None or u.deleted_at is not None:
+        raise NotFound
+    return {
+        "id": u.id,
+        "phone": u.phone,
+        "email": u.email,
+        "real_name": u.real_name,
+        "display_name": u.display_name,
+        "headline": u.headline,
+        "bio": u.bio,
+        "role_title": u.role_title,
+        "company": u.company,
+        "industry": u.industry,
+        "skills": u.skills,
+        "links": u.links,
+        "home_area_code": u.home_area_code,
+        "share_email": u.share_email,
+        "share_phone": u.share_phone,
+        "photo_url": media.public_url(u.photo_key) if u.photo_key else None,
+        "created_at": u.created_at.isoformat(),
+    }
+
+
 __all__ = [
     "Contact",
     "PushSub",
     "UserCard",
     "delete_push_subscription",
+    "export_user",
     "get_card",
     "get_cards",
     "has_approved_photo",

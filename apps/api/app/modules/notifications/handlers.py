@@ -172,3 +172,16 @@ async def warned(p: dict[str, Any]) -> None:
             "A note from the team",
             "Someone reported your behaviour. Please keep it professional.",
         )
+
+
+@outbox.subscribe("identity.user_purged")
+async def on_user_purged(p: dict[str, Any]) -> None:
+    from sqlalchemy import delete
+
+    from app.modules.notifications.models import Notification, NotificationPref
+
+    async with UnitOfWork() as session:
+        await session.execute(delete(Notification).where(Notification.user_id == p["user_id"]))
+        await session.execute(
+            delete(NotificationPref).where(NotificationPref.user_id == p["user_id"])
+        )
