@@ -5,6 +5,7 @@ os.environ["ENV"] = "test"
 os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://postgres@localhost:5432/ainet_test"
 )
+os.environ["ACCESS_TTL_S"] = str(40 * 86400)  # tests time-warp far past 15 minutes
 os.environ["REDIS_URL"] = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15")
 
 import subprocess
