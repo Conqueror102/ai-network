@@ -30,6 +30,7 @@ class Conversation(Base, CreatedAt):
     # read cursors: the last message id each side has read
     read_a: Mapped[str | None] = mapped_column(String)
     read_b: Mapped[str | None] = mapped_column(String)
+    died_logged: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     __table_args__ = (
         CheckConstraint("user_a < user_b", name="canonical_order"),
         UniqueConstraint("event_id", "user_a", "user_b"),

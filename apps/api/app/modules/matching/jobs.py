@@ -10,6 +10,7 @@ from app.modules.events import public as events
 from app.modules.matching import scoring, service
 from app.modules.matching.models import MatchFeedItem
 from app.modules.profiles import public as profiles
+from app.modules.realtime import public as realtime
 
 log = structlog.get_logger()
 FANOUT_DEBOUNCE_S = 30
@@ -23,6 +24,7 @@ def job_id(event_id: str, user_id: str) -> str:
 async def compute_for_user(event_id: str, user_id: str, fanout: bool = True) -> None:
     async with UnitOfWork() as session:
         stale = await service.compute_for_user(session, event_id, user_id)
+    await realtime.publish_user(user_id, "matches.updated", {"event_id": event_id})
     await jobs.enqueue("matching.explain", event_id, user_id, job_id=f"why:{event_id}:{user_id}")
     if fanout:
         # People who now score this user well get their feed refreshed once. Those
