@@ -180,7 +180,7 @@ def payments() -> PaymentProvider:
     if "payments" not in _cache:
         s = get_settings()
         if s.payments_provider == "bachs":
-            from app.adapters.payments.bachs import BachsPayments  # type: ignore[import-not-found,import-untyped,unused-ignore]
+            from app.adapters.payments.bachs import BachsPayments
 
             _cache["payments"] = BachsPayments(
                 _req(s.bachs_api_key, "BACHS_API_KEY"),
