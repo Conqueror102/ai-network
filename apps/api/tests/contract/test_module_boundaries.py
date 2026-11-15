@@ -21,8 +21,11 @@ def _violations() -> list[str]:
                 if parts[:2] != ["app", "modules"] or len(parts) < 3 or parts[2] == owner:
                     continue
                 if len(parts) == 3 or parts[3] != "public":
-                    if len(parts) == 3 and isinstance(node, ast.ImportFrom) and all(
-                            a.name == "public" for a in node.names):
+                    if (
+                        len(parts) == 3
+                        and isinstance(node, ast.ImportFrom)
+                        and all(a.name == "public" for a in node.names)
+                    ):
                         continue
                     out.append(f"{path.relative_to(MODULES)} imports {name}")
     return sorted(set(out))
