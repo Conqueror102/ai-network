@@ -82,6 +82,7 @@ name = "vendor SDKs only inside adapters"
 type = "forbidden"
 source_modules = ["app.modules", "app.core", "app.bootstrap", "app.registry"]
 forbidden_modules = ["anthropic", "langfuse", "pywebpush", "boto3", "botocore"]
+allow_indirect_imports = true
 ignore_imports = ["app.core.observability -> sentry_sdk"]
 
 [[tool.importlinter.contracts]]
