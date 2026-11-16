@@ -66,6 +66,9 @@ class Config:
     wildcard_to: int = 40
     wildcard_min: float = 0.15
     high_bucket: float = 0.5
+    # "people you asked for": fit what I want, whether or not I fit what they want
+    asked_for_size: int = 3
+    asked_for_min: float = 0.30
     # fairness
     damping_share: float = 0.15
     damping_step: float = 0.03

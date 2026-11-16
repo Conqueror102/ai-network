@@ -41,19 +41,47 @@ async def view_profile(user_id: str, ctx: CheckedIn, session: DbSession) -> sche
     return await service.view_profile(session, ctx.event.id, ctx.user.user_id, user_id)
 
 
-@router.get("/events/{event_id}/directory", response_model=Page[schemas.EventCardOut])
+Filter = Annotated[str | None, Query(min_length=2, max_length=60)]
+
+
+@router.get("/events/{event_id}/directory", response_model=Page[schemas.DirectoryCardOut])
 async def directory(
     ctx: CheckedIn,
     session: DbSession,
     q: Annotated[str | None, Query(max_length=60)] = None,
+    role: Filter = None,
+    industry: Filter = None,
+    company: Filter = None,
+    looking_for: schemas.Intent | None = None,
     cursor: Annotated[str | None, Query(max_length=400)] = None,
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
-) -> Page[schemas.EventCardOut]:
+) -> Page[schemas.DirectoryCardOut]:
     await ratelimit.hit("directory", ctx.user.user_id, limit=30, window_s=60)  # anti-scrape
     items, nxt = await service.directory(
-        session, ctx.event.id, ctx.user.user_id, q, cursor, clamp_limit(limit)
+        session,
+        ctx.event.id,
+        ctx.user.user_id,
+        q,
+        cursor,
+        clamp_limit(limit),
+        role=role,
+        industry=industry,
+        company=company,
+        intent=looking_for,
     )
     return Page(items=items, next_cursor=nxt)
+
+
+@router.get("/events/{event_id}/directory/search", response_model=schemas.SearchOut)
+async def search(
+    ctx: CheckedIn,
+    session: DbSession,
+    q: Annotated[str, Query(min_length=3, max_length=200)],
+) -> schemas.SearchOut:
+    """Describe who you want to meet in plain words."""
+    await ratelimit.hit("directory_search", ctx.user.user_id, limit=20, window_s=60)
+    items, mode = await service.search(session, ctx.event.id, ctx.user.user_id, q)
+    return schemas.SearchOut(items=items, mode=mode)  # type: ignore[arg-type]
 
 
 @router.post("/events/{event_id}/goals/parse", response_model=schemas.GoalParseOut)

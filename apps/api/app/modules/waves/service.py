@@ -109,6 +109,23 @@ async def _accept(session: AsyncSession, wave: Wave) -> str:
     return cid
 
 
+async def _reachable(session: AsyncSession, event_id: str, me: str, peer: str) -> bool:
+    """Someone who switched off "open to meeting anyone" can only be waved at by a
+    person the engine matched them with, or by someone they waved at first."""
+    if await profiles.open_ids(session, event_id, [peer]):
+        return True
+    if await matching.in_feed(session, event_id, me, peer):
+        return True
+    waved_at_me = (
+        await session.execute(
+            select(Wave.id).where(
+                Wave.event_id == event_id, Wave.from_user == peer, Wave.to_user == me
+            )
+        )
+    ).first()
+    return waved_at_me is not None
+
+
 async def send(
     session: AsyncSession, event: events.EventInfo, me: str, premium: bool, data: WaveIn
 ) -> Wave:
@@ -120,6 +137,8 @@ async def send(
         raise errors.WavesPaused
     if not await profiles.showable_ids(session, event.id, me, [data.to_user]):
         raise errors.RecipientUnavailable
+    if not await _reachable(session, event.id, me, data.to_user):
+        raise errors.RecipientUnavailable  # same answer as "not here": nothing to probe
     existing = (
         await session.execute(
             select(Wave.id).where(
