@@ -17,6 +17,8 @@ class EventProfileIn(In):
     headline: str | None = Field(default=None, max_length=80)
     offer_text: str | None = Field(default=None, max_length=300)
     visibility: Visibility = "directory"
+    # off: only people I am matched with can find me or wave at me
+    open_to_all: bool = True
 
 
 class EventCardOut(BaseModel):
@@ -31,6 +33,23 @@ class EventCardOut(BaseModel):
 
 class MyEventProfileOut(EventCardOut):
     visibility: str
+    open_to_all: bool
+
+
+class DirectoryCardOut(EventCardOut):
+    """A directory row. The extra fields come from the public part of the profile
+    and let people scan a list without opening each card."""
+
+    role_title: str | None
+    company: str | None
+    industry: str | None
+    looking_for: list[str]  # the person's active goal intents, e.g. ["hire", "meet"]
+
+
+class SearchOut(BaseModel):
+    items: list[DirectoryCardOut]
+    # "smart": ranked by meaning. "keyword": plain text match, used when AI is unavailable.
+    mode: Literal["smart", "keyword"]
 
 
 class Target(In):

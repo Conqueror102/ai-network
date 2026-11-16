@@ -1,8 +1,9 @@
 """Identity's public surface for other modules: DTOs only, never ORM objects."""
 
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import revoke_user
@@ -124,6 +125,39 @@ async def set_suspended(session: AsyncSession, user_id: str, suspended: bool) ->
         await revoke_user(user_id)
 
 
+def user_ids_matching(
+    *,
+    role: str | None = None,
+    industry: str | None = None,
+    company: str | None = None,
+    text: str | None = None,
+) -> Select[Any]:
+    """Subquery of active user ids whose public profile fields contain the given text.
+    For directory filters. Only fields that are already on the public card are searched;
+    phone, email and real name never are."""
+
+    def like(value: str) -> str:
+        return f"%{value.replace('%', '').replace('_', '')}%"
+
+    q = select(User.id).where(User.deleted_at.is_(None), User.suspended_at.is_(None))
+    if role:
+        q = q.where(or_(User.role_title.ilike(like(role)), User.headline.ilike(like(role))))
+    if industry:
+        q = q.where(User.industry.ilike(like(industry)))
+    if company:
+        q = q.where(User.company.ilike(like(company)))
+    if text:
+        q = q.where(
+            or_(
+                User.role_title.ilike(like(text)),
+                User.company.ilike(like(text)),
+                User.industry.ilike(like(text)),
+                User.headline.ilike(like(text)),
+            )
+        )
+    return q
+
+
 async def export_user(session: AsyncSession, user_id: str) -> dict[str, object]:
     """The account record as the user gave it to us. Raises 404 for deleted accounts."""
     u = await session.get(User, user_id)
@@ -163,4 +197,5 @@ __all__ = [
     "push_subscriptions",
     "set_suspended",
     "shared_contact",
+    "user_ids_matching",
 ]

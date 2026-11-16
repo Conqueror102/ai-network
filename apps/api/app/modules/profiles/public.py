@@ -42,6 +42,7 @@ class ProfileData:
     industry: str | None
     skills: list[str]
     bio: str | None
+    open_to_all: bool = True
 
 
 async def load_profiles(
@@ -95,6 +96,7 @@ async def load_profiles(
             u.industry,
             u.skills,
             u.bio,
+            open_to_all=p.open_to_all,
         )
     return out
 
@@ -203,6 +205,24 @@ async def showable_ids(
     )
 
 
+async def open_ids(session: AsyncSession, event_id: str, user_ids: list[str]) -> set[str]:
+    """Subset of `user_ids` who are open to meeting anyone. The rest have asked to be
+    reachable only by the people they are matched with."""
+    if not user_ids:
+        return set()
+    return set(
+        (
+            await session.execute(
+                select(EventProfile.user_id).where(
+                    EventProfile.event_id == event_id,
+                    EventProfile.user_id.in_(user_ids),
+                    EventProfile.open_to_all.is_(True),
+                )
+            )
+        ).scalars()
+    )
+
+
 async def profile_count(session: AsyncSession, event_id: str) -> int:
     from sqlalchemy import func
 
@@ -270,6 +290,7 @@ __all__ = [
     "get_event_cards",
     "load_profiles",
     "nearest_offers",
+    "open_ids",
     "profile_count",
     "showable_ids",
     "user_ids_with_profile",

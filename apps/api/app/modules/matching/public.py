@@ -4,7 +4,7 @@ They never see scores."""
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.matching import scoring
-from app.modules.matching.service import fallback_why, get_score, record_signal
+from app.modules.matching.service import fallback_why, get_score, in_feed, record_signal
 
 
 async def match_context(
@@ -19,4 +19,4 @@ async def match_context(
     return chips, (row.why_a if viewer_is_a else row.why_b) or fallback_why(chips)
 
 
-__all__ = ["match_context", "record_signal"]
+__all__ = ["in_feed", "match_context", "record_signal"]

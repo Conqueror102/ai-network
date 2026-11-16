@@ -22,7 +22,7 @@ from app.modules.matching.models import (
     MatchingConfig,
     MatchScore,
 )
-from app.modules.matching.schemas import FeedOut, MatchCard
+from app.modules.matching.schemas import AskedForCard, FeedOut, MatchCard
 from app.modules.matching.scoring import Config
 from app.modules.profiles import public as profiles
 
@@ -364,15 +364,89 @@ async def feed(session: AsyncSession, event_id: str, me: str) -> tuple[FeedOut, 
                 score_bucket="high" if score >= cfg.high_bucket else "medium",
             )
         )
+    asked = await _asked_for(session, event_id, me, {i.peer_id for i in items}, cfg)
     others = await profiles.profile_count(session, event_id) - 1
     return (
         FeedOut(
             items=out,
+            asked_for=asked,
             computed_at=state.computed_at if state else None,
             warming_up=others < cfg.warmup_min,
         ),
         computed_now,
     )
+
+
+def _my_side(row: MatchScore, me: str) -> dict[str, Any]:
+    """The half of a pair's components that describes what `me` wants."""
+    d = "ab" if row.user_a == me else "ba"
+    return next((m for m in row.components.get("matched", []) if m.get("dir") == d), {})
+
+
+async def _asked_for(
+    session: AsyncSession,
+    event_id: str,
+    me: str,
+    in_feed: set[str],
+    cfg: scoring.Config,
+) -> list[AskedForCard]:
+    """People who fit what I am looking for even though the pair did not make my feed,
+    usually because I do not fit their goals. Ranked by my side of the fit only.
+
+    Left out: anyone already in the feed, anyone I skipped, waved at or connected with,
+    hidden or blocked people, and people who switched off "open to meeting anyone"."""
+    if cfg.asked_for_size <= 0:
+        return []
+    rows = list(
+        (
+            await session.execute(
+                select(MatchScore).where(
+                    MatchScore.event_id == event_id,
+                    or_(MatchScore.user_a == me, MatchScore.user_b == me),
+                )
+            )
+        ).scalars()
+    )
+    wanted: list[tuple[float, str, MatchScore]] = []
+    for row in rows:
+        peer = row.user_b if row.user_a == me else row.user_a
+        mine = float(row.components.get("fit_ab" if row.user_a == me else "fit_ba", 0.0))
+        if peer not in in_feed and mine >= cfg.asked_for_min:
+            wanted.append((mine, peer, row))
+    if not wanted:
+        return []
+    ids = [p for _, p, _ in wanted]
+    ok = await profiles.showable_ids(session, event_id, me, ids)
+    ok &= await profiles.open_ids(session, event_id, ids)
+    ok -= await excluded_ids(session, event_id, me)
+    wanted = sorted((w for w in wanted if w[1] in ok), key=lambda w: (-w[0], w[1]))
+    wanted = wanted[: cfg.asked_for_size]
+    cards = await profiles.get_event_cards(session, event_id, [p for _, p, _ in wanted])
+    out = []
+    for _, peer, row in wanted:
+        side = _my_side(row, me)
+        chips = [str(h).split(":", 1)[-1] for h in side.get("filter_hits", [])]
+        label = scoring.INTENT_LABEL.get(side.get("b_intent") or "")
+        if label and label not in chips:
+            chips.append(label)
+        card = cards[peer]
+        out.append(
+            AskedForCard(
+                user_id=peer,
+                display_name=card.display_name,
+                photo_url=card.photo_url,
+                headline=card.headline,
+                offer_text=card.offer_text,
+                why="Fits what you are looking for.",
+                matched_chips=chips[:4],
+            )
+        )
+    return out
+
+
+async def in_feed(session: AsyncSession, event_id: str, me: str, peer_id: str) -> bool:
+    """True when the engine put `peer_id` in my feed, i.e. the match is mutual enough."""
+    return (await session.get(MatchFeedItem, (event_id, me, peer_id))) is not None
 
 
 async def skip(session: AsyncSession, event_id: str, me: str, peer_id: str) -> None:

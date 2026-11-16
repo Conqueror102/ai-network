@@ -18,8 +18,23 @@ class MatchCard(BaseModel):
     score_bucket: Literal["high", "medium"]
 
 
+class AskedForCard(BaseModel):
+    """Someone who fits what the viewer is looking for, shown apart from mutual
+    matches because the interest may be one-sided. Contact is still a wave they can
+    silently decline. Clients send that wave with source "directory"."""
+
+    user_id: str
+    display_name: str
+    photo_url: str | None
+    headline: str | None
+    offer_text: str | None
+    why: str
+    matched_chips: list[str]
+
+
 class FeedOut(BaseModel):
     items: list[MatchCard]
+    asked_for: list[AskedForCard] = []
     computed_at: datetime | None
     warming_up: bool
 

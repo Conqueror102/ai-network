@@ -1,7 +1,15 @@
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +33,9 @@ class EventProfile(Base, Timestamps):
     headline: Mapped[str | None] = mapped_column(String)
     offer_text: Mapped[str | None] = mapped_column(String)
     visibility: Mapped[str] = mapped_column(String, server_default="directory", nullable=False)
+    # False: only shown to people the matching engine pairs me with (both sides fit).
+    # I leave the directory, search and "asked for" rows, and strangers cannot wave at me.
+    open_to_all: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     profile_embedding: Mapped[list[float] | None] = mapped_column(Vector(DIMS))
     embedding_model: Mapped[str | None] = mapped_column(String)
     __table_args__ = (

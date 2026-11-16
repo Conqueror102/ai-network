@@ -16,6 +16,7 @@ from app.modules.identity import public as identity
 from app.modules.profiles import errors
 from app.modules.profiles.models import EventProfile, Goal
 from app.modules.profiles.schemas import (
+    DirectoryCardOut,
     EventCardOut,
     EventProfileIn,
     GoalDraftOut,
@@ -94,7 +95,9 @@ async def card_of(session: AsyncSession, profile: EventProfile) -> EventCardOut:
 
 async def my_profile_out(session: AsyncSession, profile: EventProfile) -> MyEventProfileOut:
     card = await card_of(session, profile)
-    return MyEventProfileOut(**card.model_dump(), visibility=profile.visibility)
+    return MyEventProfileOut(
+        **card.model_dump(), visibility=profile.visibility, open_to_all=profile.open_to_all
+    )
 
 
 async def upsert_profile(
@@ -137,41 +140,177 @@ async def view_profile(session: AsyncSession, event_id: str, me: str, user_id: s
     return await card_of(session, profile)
 
 
-async def directory(
-    session: AsyncSession, event_id: str, me: str, q: str | None, cursor: str | None, limit: int
-) -> tuple[list[EventCardOut], str | None]:
-    mine = await require_profile(session, event_id, me)
-    if mine.visibility == "hidden":
-        raise errors.DirectoryRequiresVisibility  # reciprocity (01 §4)
-    query = select(EventProfile).where(
+def _like(value: str) -> str:
+    return f"%{value.replace('%', '').replace('_', '')}%"
+
+
+def _discoverable(event_id: str, me: str) -> list[Any]:
+    """Who may appear in the directory and in search for `me`: checked in, visible,
+    open to meeting anyone, not blocked either way, not me."""
+    return [
         EventProfile.event_id == event_id,
         EventProfile.visibility != "hidden",
+        EventProfile.open_to_all.is_(True),
         EventProfile.user_id != me,
         EventProfile.user_id.in_(events.checked_in_subquery(event_id)),
         safety.not_blocked(me, EventProfile.user_id),
+    ]
+
+
+async def _require_browsing(session: AsyncSession, event_id: str, me: str) -> None:
+    mine = await require_profile(session, event_id, me)
+    if mine.visibility == "hidden":
+        raise errors.DirectoryRequiresVisibility  # reciprocity (01 §4)
+
+
+async def _directory_cards(
+    session: AsyncSession, rows: list[EventProfile]
+) -> list[DirectoryCardOut]:
+    if not rows:
+        return []
+    users = await identity.get_cards(session, [p.user_id for p in rows])
+    intents: dict[str, list[str]] = {}
+    for profile_id, intent in (
+        await session.execute(
+            select(Goal.event_profile_id, Goal.intent)
+            .where(Goal.event_profile_id.in_([p.id for p in rows]), Goal.status == "active")
+            .order_by(Goal.priority)
+        )
+    ).all():
+        if intent not in intents.setdefault(profile_id, []):
+            intents[profile_id].append(intent)
+    return [
+        DirectoryCardOut(
+            user_id=p.user_id,
+            display_name=p.display_name,
+            photo_url=users[p.user_id].photo_url,
+            headline=p.headline,
+            offer_text=p.offer_text,
+            role_title=users[p.user_id].role_title,
+            company=users[p.user_id].company,
+            industry=users[p.user_id].industry,
+            looking_for=intents.get(p.id, []),
+        )
+        for p in rows
+        if users[p.user_id].active
+    ]
+
+
+def _keyword(q: str) -> Any:
+    like = _like(q)
+    return or_(
+        EventProfile.display_name.ilike(like),
+        EventProfile.headline.ilike(like),
+        EventProfile.offer_text.ilike(like),
+        EventProfile.user_id.in_(identity.user_ids_matching(text=q)),
     )
+
+
+async def directory(
+    session: AsyncSession,
+    event_id: str,
+    me: str,
+    q: str | None,
+    cursor: str | None,
+    limit: int,
+    *,
+    role: str | None = None,
+    industry: str | None = None,
+    company: str | None = None,
+    intent: str | None = None,
+) -> tuple[list[DirectoryCardOut], str | None]:
+    """Browse everyone at the event who is open to being found. Filters combine with
+    AND. Nothing here depends on the match score: anyone listed can be waved at."""
+    await _require_browsing(session, event_id, me)
+    query = select(EventProfile).where(*_discoverable(event_id, me))
     if q:
-        like = f"%{q.replace('%', '').replace('_', '')}%"
+        query = query.where(_keyword(q))
+    if role or industry or company:
         query = query.where(
-            or_(EventProfile.display_name.ilike(like), EventProfile.headline.ilike(like))
+            EventProfile.user_id.in_(
+                identity.user_ids_matching(role=role, industry=industry, company=company)
+            )
+        )
+    if intent:
+        query = query.where(
+            EventProfile.id.in_(
+                select(Goal.event_profile_id).where(Goal.status == "active", Goal.intent == intent)
+            )
         )
     after = decode_cursor(cursor)
     if after:
         query = query.where(EventProfile.id > after)
     rows = list((await session.execute(query.order_by(EventProfile.id).limit(limit + 1))).scalars())
     rows, nxt = paginate(rows, limit, lambda p: p.id)
-    users = await identity.get_cards(session, [p.user_id for p in rows])
-    return [
-        EventCardOut(
-            user_id=p.user_id,
-            display_name=p.display_name,
-            photo_url=users[p.user_id].photo_url,
-            headline=p.headline,
-            offer_text=p.offer_text,
+    return await _directory_cards(session, rows), nxt
+
+
+SEARCH_LIMIT = 20
+SEARCH_MIN_SIM = 0.15  # below this a result is noise, not a weak match
+
+
+async def search(
+    session: AsyncSession, event_id: str, me: str, text: str
+) -> tuple[list[DirectoryCardOut], str]:
+    """ "A lawyer who works with startups": rank people by how well what they offer and
+    who they are fits the description. One-directional on purpose: it ignores whether
+    the searcher fits the other person's goals. The other person still decides, because
+    contact starts with a wave they can silently decline.
+
+    Falls back to a keyword match when embeddings are unavailable."""
+    await _require_browsing(session, event_id, me)
+    conds = _discoverable(event_id, me)
+    try:
+        vectors, _ = await ai.embed([text], input_type="query")
+    except ai.AiUnavailable:
+        rows = list(
+            (
+                await session.execute(
+                    select(EventProfile)
+                    .where(*conds, _keyword(text))
+                    .order_by(EventProfile.id)
+                    .limit(SEARCH_LIMIT)
+                )
+            ).scalars()
         )
-        for p in rows
-        if users[p.user_id].active
-    ], nxt
+        return await _directory_cards(session, rows), "keyword"
+    vector = vectors[0]
+    d_profile = EventProfile.profile_embedding.cosine_distance(vector)
+    d_goal = Goal.offer_embedding.cosine_distance(vector)
+    hits = [
+        *(
+            await session.execute(
+                select(EventProfile.id, d_profile)
+                .where(*conds, EventProfile.profile_embedding.is_not(None))
+                .order_by(d_profile)
+                .limit(SEARCH_LIMIT)
+            )
+        ).all(),
+        *(
+            await session.execute(
+                select(EventProfile.id, d_goal)
+                .join(Goal, Goal.event_profile_id == EventProfile.id)
+                .where(*conds, Goal.status == "active", Goal.offer_embedding.is_not(None))
+                .order_by(d_goal)
+                .limit(SEARCH_LIMIT)
+            )
+        ).all(),
+    ]
+    best: dict[str, float] = {}
+    for profile_id, dist in hits:
+        sim = 0.0 if dist is None or dist != dist else 1.0 - float(dist)  # NaN: zero vector
+        if sim >= SEARCH_MIN_SIM:
+            best[profile_id] = max(best.get(profile_id, 0.0), sim)
+    ranked = sorted(best, key=lambda pid: (-best[pid], pid))[:SEARCH_LIMIT]
+    if not ranked:
+        return [], "smart"
+    by_id = {
+        p.id: p
+        for p in (
+            await session.execute(select(EventProfile).where(EventProfile.id.in_(ranked)))
+        ).scalars()
+    }
+    return await _directory_cards(session, [by_id[pid] for pid in ranked]), "smart"
 
 
 # --- goals -----------------------------------------------------------------------------

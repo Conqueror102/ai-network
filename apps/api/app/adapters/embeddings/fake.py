@@ -5,7 +5,7 @@ import math
 import re
 from typing import Literal
 
-from app.adapters.embeddings.port import DIMS
+from app.adapters.embeddings.port import DIMS, EmbeddingError
 
 _STOP = {
     "a",
@@ -36,10 +36,13 @@ _STOP = {
 
 class FakeEmbeddings:
     model = "fake-bow-v1"
+    fail = False  # tests flip this to simulate a provider outage
 
     async def embed(
         self, texts: list[str], *, input_type: Literal["query", "document"]
     ) -> list[list[float]]:
+        if self.fail:
+            raise EmbeddingError("fake outage")
         return [self._one(t) for t in texts]
 
     @staticmethod
