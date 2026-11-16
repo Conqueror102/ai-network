@@ -116,6 +116,22 @@ async def meet_reminder(p: dict[str, Any]) -> None:
             )
 
 
+@outbox.subscribe("chat.meet_arrived")
+async def meet_arrived(p: dict[str, Any]) -> None:
+    """ "Ada is here": sent the moment someone taps it, to the one person they are meeting."""
+    async with UnitOfWork() as session:
+        name = (await _names(session, p["event_id"], [p["from_user"]]))[p["from_user"]]
+        tip = " Open the chat to see how to spot them." if p.get("has_spot_me") else ""
+        await notify(
+            session,
+            p["to_user"],
+            "meet",
+            f"{name} is here",
+            f"{name} is at {p['meeting_point']}.{tip}",
+            data={"conversation_id": p["conversation_id"]},
+        )
+
+
 @outbox.subscribe("events.application_decided")
 async def application_decided(p: dict[str, Any]) -> None:
     async with UnitOfWork() as session:

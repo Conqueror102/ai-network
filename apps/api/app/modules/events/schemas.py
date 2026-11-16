@@ -24,6 +24,7 @@ class EventCreateIn(In):
 
     @model_validator(mode="after")
     def _order(self) -> "EventCreateIn":
+        self.meeting_points = _clean_points(self.meeting_points) or []
         if self.ends_at <= self.starts_at:
             raise ValueError("ends_at must be after starts_at")
         return self
@@ -42,6 +43,45 @@ class EventPatchIn(In):
     visibility: Literal["public", "unlisted"] | None = None
     meeting_points: list[str] | None = Field(default=None, max_length=20)
     static_door_qr_enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def _points(self) -> "EventPatchIn":
+        if self.meeting_points is not None:
+            self.meeting_points = _clean_points(self.meeting_points)
+        return self
+
+
+def _clean_points(points: list[str] | None) -> list[str] | None:
+    """Trimmed, without blanks or repeats: each one becomes a numbered spot."""
+    if points is None:
+        return None
+    out: list[str] = []
+    for p in points:
+        if not p or len(p) > 120:
+            raise ValueError("each meeting point needs 1 to 120 characters")
+        if p not in out:
+            out.append(p)
+    return out
+
+
+class SpotCreateIn(In):
+    label: str = Field(min_length=1, max_length=120)
+    hint: str | None = Field(default=None, max_length=140)
+
+
+class SpotPatchIn(In):
+    label: str | None = Field(default=None, min_length=1, max_length=120)
+    hint: str | None = Field(default=None, max_length=140)
+    active: bool | None = None
+
+
+class SpotOut(BaseModel):
+    id: str
+    number: int
+    code: str  # "M3": what the sign at the venue says
+    label: str
+    hint: str | None
+    active: bool
 
 
 class StatusIn(In):

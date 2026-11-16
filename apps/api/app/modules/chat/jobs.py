@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import DateTime, cast, func, select, update
 
 from app.core import clock, jobs, outbox
 from app.core.db.uow import UnitOfWork
@@ -91,7 +91,7 @@ async def meet_reminder(message_id: str) -> None:
                 "conversation_id": conv.id,
                 "event_id": conv.event_id,
                 "user_ids": [conv.user_a, conv.user_b],
-                "meeting_point": proposal.payload["meeting_point"],
+                "meeting_point": service.place_of(proposal.payload),
                 "at": proposal.payload["at"],
             },
         )
@@ -134,6 +134,7 @@ async def mark_died() -> None:
 
 
 MESSAGE_KEEP = timedelta(days=730)
+SPOT_ME_KEEP = timedelta(days=1)
 
 
 @jobs.cron("chat.retention", hour={2}, minute={30})
@@ -145,4 +146,20 @@ async def retention() -> None:
         res = await session.execute(
             delete(Message).where(Message.created_at < clock.now() - MESSAGE_KEEP)
         )
-    log.info("chat_retention", messages=res.rowcount or 0)  # type: ignore[attr-defined]
+        # "How to spot me" lines describe what someone looked like that day: they go a
+        # day after the meeting, long before the message itself does.
+        meet_at = cast(Message.payload["at"].astext, DateTime(timezone=True))
+        scrubbed = await session.execute(
+            update(Message)
+            .where(
+                Message.kind == "meet_proposal",
+                Message.payload.has_key("spot_me"),
+                meet_at < clock.now() - SPOT_ME_KEEP,
+            )
+            .values(payload=Message.payload.op("-")("spot_me"))
+        )
+    log.info(
+        "chat_retention",
+        messages=res.rowcount or 0,  # type: ignore[attr-defined]
+        spot_me=scrubbed.rowcount or 0,  # type: ignore[attr-defined]
+    )

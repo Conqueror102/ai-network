@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import NotFound
 from app.modules.events.deps import CheckedIn, EventCtx, OrgOwner, OrgStaff
 from app.modules.events.models import Checkin, Event
-from app.modules.events.service import is_checked_in
+from app.modules.events.service import is_checked_in, list_spots, spot_code
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,27 @@ async def get_info(session: AsyncSession, event_id: str) -> EventInfo:
     if event is None:
         raise NotFound
     return _info(event)
+
+
+@dataclass(frozen=True)
+class SpotInfo:
+    id: str
+    number: int
+    code: str
+    label: str
+    hint: str | None
+
+    @property
+    def place(self) -> str:
+        """What people say and what the sign shows: "M3 · Coffee stand"."""
+        return f"{self.code} · {self.label}"
+
+
+async def active_spots(session: AsyncSession, event_id: str) -> list[SpotInfo]:
+    return [
+        SpotInfo(s.id, s.number, spot_code(s.number), s.label, s.hint)
+        for s in await list_spots(session, event_id, active_only=True)
+    ]
 
 
 async def get_infos(session: AsyncSession, event_ids: list[str]) -> dict[str, EventInfo]:
@@ -126,6 +147,8 @@ __all__ = [
     "EventInfo",
     "OrgOwner",
     "OrgStaff",
+    "SpotInfo",
+    "active_spots",
     "checked_in_count",
     "checked_in_subquery",
     "checked_in_today",

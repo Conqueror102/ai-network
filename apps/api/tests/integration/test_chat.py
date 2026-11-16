@@ -239,3 +239,100 @@ async def test_wingman_assist(client, session):
     assert r.status_code == 503 and r.json()["error"]["code"] == "ai_unavailable"
     await flags.set_flag("ai.task.chat_assist", None)
     flags.clear_cache()
+
+
+async def test_numbered_spots_spot_me_and_im_here(client, session):
+    owner, eid, cid, (a, b, c) = await chat_pair(client, extra=1)
+    spots_url = f"/v1/events/{eid}/meeting-spots"
+    # the event's two meeting points already are numbered spots
+    r = await client.get(spots_url, headers=owner["headers"])
+    assert [(s["code"], s["label"]) for s in r.json()] == [
+        ("M1", "Coffee stand"),
+        ("M2", "Main stage left"),
+    ]
+    assert (await client.get(spots_url, headers=a["headers"])).status_code == 404
+    r = await client.post(
+        spots_url, json={"label": "Blue pillar", "hint": "By the exit"}, headers=owner["headers"]
+    )
+    assert r.status_code == 201 and r.json()["code"] == "M3"
+
+    r = await client.post(spots_url, json={"label": "Blue pillar"}, headers=owner["headers"])
+    assert r.json()["error"]["code"] == "spot_exists"
+    # switching a spot off keeps its number; a new one never reuses it
+    m2 = (await client.get(spots_url, headers=owner["headers"])).json()[1]["id"]
+    r = await client.patch(f"{spots_url}/{m2}", json={"active": False}, headers=owner["headers"])
+    assert r.json()["active"] is False
+    r = await client.post(spots_url, json={"label": "Garden gate"}, headers=owner["headers"])
+    assert r.json()["code"] == "M4"
+    event = (await client.get(f"/v1/events/{eid}", headers=owner["headers"])).json()
+    assert event["meeting_points"] == ["Coffee stand", "Blue pillar", "Garden gate"]
+
+    at = (clock.now() + timedelta(hours=1)).replace(minute=30, second=0, microsecond=0)
+    listing = f"/v1/events/{eid}/meet-spots"
+    r = await client.get(listing, params={"at": at.isoformat()}, headers=a["headers"])
+    assert [s["code"] for s in r.json()] == ["M1", "M3", "M4"]
+    assert [s["suggested"] for s in r.json()] == [True, False, False]
+    m1 = r.json()[0]["id"]
+    assert r.json()[1]["hint"] == "By the exit"
+
+    url = f"/v1/conversations/{cid}/meet"
+    r = await client.post(url, json={"spot_id": m2, "at": at.isoformat()}, headers=a["headers"])
+    assert r.json()["error"]["code"] == "meet_invalid"  # switched off
+    r = await client.post(
+        url,
+        json={"spot_id": m1, "at": at.isoformat(), "spot_me": "Red jacket, by the menu"},
+        headers=a["headers"],
+    )
+    assert r.status_code == 200 and "M1 · Coffee stand" in r.json()["body"]
+    pid = r.json()["id"]
+    assert r.json()["payload"]["spot_me"] == {a["id"]: "Red jacket, by the menu"}
+    # that spot now has a meeting at that time, so a quieter one is suggested
+    r = await client.get(listing, params={"at": at.isoformat()}, headers=c["headers"])
+    assert [(s["code"], s["busy"], s["suggested"]) for s in r.json()] == [
+        ("M1", "some", False),
+        ("M3", "quiet", True),
+        ("M4", "quiet", False),
+    ]
+    assert all(
+        set(s) == {"id", "number", "code", "label", "hint", "busy", "suggested"} for s in r.json()
+    )
+
+    status = f"{url}/{pid}/status"
+    # nobody outside the chat can touch or read the meet-up
+    r = await client.post(status, json={"arrived": True}, headers=c["headers"])
+    assert r.status_code == 404
+    # "I'm here" needs a confirmed meeting
+    r = await client.post(status, json={"arrived": True}, headers=a["headers"])
+    assert r.json()["error"]["code"] == "meet_not_now"
+    r = await client.post(
+        url, json={"accept_message_id": pid, "spot_me": "Green cap"}, headers=b["headers"]
+    )
+    assert "M1 · Coffee stand" in r.json()["body"]
+    # ... and it is too early an hour before
+    r = await client.post(status, json={"arrived": True}, headers=a["headers"])
+    assert r.json()["error"]["code"] == "meet_not_now"
+    r = await client.post(status, json={"spot_me": "Now by the door"}, headers=a["headers"])
+    assert r.json()["payload"]["spot_me"] == {a["id"]: "Now by the door", b["id"]: "Green cap"}
+
+    clock.advance(at - clock.now() - timedelta(minutes=5))
+    await settle()
+    r = await client.post(status, json={"arrived": True}, headers=a["headers"])
+    assert list(r.json()["payload"]["arrived"]) == [a["id"]]
+    r = await client.post(status, json={"arrived": True}, headers=a["headers"])  # second tap
+    assert r.status_code == 200
+    await settle()
+    topics = [e.topic for e in (await session.execute(select(OutboxEvent))).scalars()]
+    assert topics.count("chat.meet_arrived") == 1
+    notes = (await client.get("/v1/notifications", headers=b["headers"])).json()["items"]
+    assert any("is at M1 · Coffee stand" in n["body"] for n in notes)
+    notes = (await client.get("/v1/notifications", headers=a["headers"])).json()["items"]
+    assert not any("is at M1" in n["body"] for n in notes)
+
+    # the "how to spot me" lines are erased a day after the meeting; the meet-up stays
+    clock.advance(timedelta(days=1, hours=1))
+    await chat_jobs.retention()
+    r = await client.post(status, json={"spot_me": "Too late"}, headers=a["headers"])
+    assert r.json()["error"]["code"] == "meet_not_open"
+    msgs = (await client.get(f"/v1/conversations/{cid}/messages", headers=b["headers"])).json()
+    card = next(m for m in msgs["items"] if m["id"] == pid)
+    assert "spot_me" not in card["payload"] and card["payload"]["status"] == "accepted"

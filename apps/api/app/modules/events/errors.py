@@ -31,3 +31,11 @@ class AnnouncementRateLimited(RateLimited):
 
 class ContentRejected(ValidationFailed):
     code, message = "content_rejected", "That text is not allowed. Please rephrase it"
+
+
+class SpotExists(Conflict):
+    code, message = "spot_exists", "This event already has a meeting spot with that name"
+
+
+class TooManySpots(ValidationFailed):
+    code, message = "too_many_spots", "An event can have at most 20 active meeting spots"

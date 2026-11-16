@@ -14,7 +14,13 @@ from app.core.observability import CHECKINS
 from app.core.security.hashing import random_token
 from app.modules.ai import public as ai
 from app.modules.events import errors, qr
-from app.modules.events.models import Announcement, Checkin, Event, EventApplication
+from app.modules.events.models import (
+    Announcement,
+    Checkin,
+    Event,
+    EventApplication,
+    MeetingSpot,
+)
 from app.modules.events.schemas import (
     AnnouncementOut,
     ApplicationOut,
@@ -22,6 +28,9 @@ from app.modules.events.schemas import (
     EventOut,
     EventPatchIn,
     LiveStatsOut,
+    SpotCreateIn,
+    SpotOut,
+    SpotPatchIn,
 )
 from app.modules.identity import public as identity
 
@@ -80,8 +89,116 @@ async def create(session: AsyncSession, organizer_id: str, data: EventCreateIn) 
         **data.model_dump(),
     )
     session.add(event)
+    await session.flush()
+    await _sync_spots(session, event)
     await session.commit()
     return event
+
+
+# --- numbered meeting spots ----------------------------------------------------------------
+# `events.meeting_points` stays the simple list of active labels (older clients read it);
+# `meeting_spots` is the source of truth and gives each one a stable number.
+
+MAX_SPOTS = 20
+
+
+def spot_code(number: int) -> str:
+    return f"M{number}"
+
+
+def spot_out(s: MeetingSpot) -> SpotOut:
+    return SpotOut(
+        id=s.id,
+        number=s.number,
+        code=spot_code(s.number),
+        label=s.label,
+        hint=s.hint,
+        active=s.active,
+    )
+
+
+async def list_spots(
+    session: AsyncSession, event_id: str, *, active_only: bool = False
+) -> list[MeetingSpot]:
+    q = select(MeetingSpot).where(MeetingSpot.event_id == event_id)
+    if active_only:
+        q = q.where(MeetingSpot.active.is_(True))
+    return list((await session.execute(q.order_by(MeetingSpot.number))).scalars())
+
+
+async def _sync_spots(session: AsyncSession, event: Event) -> None:
+    """Make the numbered spots match `event.meeting_points`: new labels get the next
+    number, labels that left the list are switched off, returning labels keep their number."""
+    spots = await list_spots(session, event.id)
+    by_label = {s.label: s for s in spots}
+    number = max((s.number for s in spots), default=0)
+    for label in event.meeting_points:
+        if label in by_label:
+            by_label[label].active = True
+        else:
+            number += 1
+            session.add(
+                MeetingSpot(id=new_id("msp"), event_id=event.id, number=number, label=label)
+            )
+    for s in spots:
+        if s.label not in event.meeting_points:
+            s.active = False
+
+
+def _relist(event: Event, spots: list[MeetingSpot]) -> None:
+    event.meeting_points = [s.label for s in sorted(spots, key=lambda s: s.number) if s.active]
+
+
+async def add_spot(session: AsyncSession, event: Event, data: SpotCreateIn) -> MeetingSpot:
+    await session.refresh(event, with_for_update=True)  # one writer per event's spot list
+    spots = await list_spots(session, event.id)
+    active = [s for s in spots if s.active]
+    if len(active) >= MAX_SPOTS:
+        raise errors.TooManySpots
+    if any(s.label == data.label for s in active):
+        raise errors.SpotExists
+    again = next((s for s in spots if s.label == data.label), None)
+    if again is not None:  # a spot that was switched off comes back under its old number
+        again.active, again.hint = True, data.hint if data.hint is not None else again.hint
+        spot = again
+    else:
+        spot = MeetingSpot(
+            id=new_id("msp"),
+            event_id=event.id,
+            number=max((s.number for s in spots), default=0) + 1,
+            label=data.label,
+            hint=data.hint,
+            active=True,
+        )
+        session.add(spot)
+        spots.append(spot)
+    _relist(event, spots)
+    await session.commit()
+    return spot
+
+
+async def patch_spot(
+    session: AsyncSession, event: Event, spot_id: str, patch: SpotPatchIn
+) -> MeetingSpot:
+    await session.refresh(event, with_for_update=True)
+    spots = await list_spots(session, event.id)
+    spot = next((s for s in spots if s.id == spot_id), None)
+    if spot is None:
+        raise NotFound
+    data = patch.model_dump(exclude_unset=True)
+    label = data.get("label") or spot.label
+    active = spot.active if data.get("active") is None else bool(data["active"])
+    others = [s for s in spots if s.id != spot.id]
+    if any(s.label == label for s in others):
+        raise errors.SpotExists
+    if active and not spot.active and sum(s.active for s in others) >= MAX_SPOTS:
+        raise errors.TooManySpots
+    spot.label, spot.active = label, active
+    if "hint" in data:
+        spot.hint = data["hint"]
+    _relist(event, spots)
+    await session.commit()
+    return spot
 
 
 async def update(session: AsyncSession, event: Event, patch: EventPatchIn) -> Event:
@@ -92,6 +209,8 @@ async def update(session: AsyncSession, event: Event, patch: EventPatchIn) -> Ev
         from app.core.errors import ValidationFailed
 
         raise ValidationFailed("ends_at must be after starts_at")
+    if "meeting_points" in data:
+        await _sync_spots(session, event)
     await session.commit()
     return event
 
