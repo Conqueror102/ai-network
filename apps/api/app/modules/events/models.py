@@ -61,6 +61,27 @@ class Event(Base, Timestamps):
     )
 
 
+class MeetingSpot(Base, CreatedAt):
+    """A numbered place to meet ("M3 · Coffee stand"). The number is what the sign at the
+    venue shows, so it is never reused or renumbered: a removed spot is deactivated."""
+
+    __tablename__ = "meeting_spots"
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # msp_
+    event_id: Mapped[str] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"), nullable=False
+    )
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    hint: Mapped[str | None] = mapped_column(String)  # "left of the stage, by the blue banner"
+    active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
+    __table_args__ = (
+        UniqueConstraint("event_id", "number"),
+        CheckConstraint("number > 0", name="number_positive"),
+        CheckConstraint("char_length(label) BETWEEN 1 AND 120", name="label_len"),
+        CheckConstraint("hint IS NULL OR char_length(hint) <= 140", name="hint_len"),
+    )
+
+
 class EventApplication(Base, CreatedAt):
     __tablename__ = "event_applications"
     id: Mapped[str] = mapped_column(String, primary_key=True)  # app_

@@ -16,6 +16,7 @@
 |---|---|---|
 | `message.new` | Message | conversation peer |
 | `message.read` | {conversation_id, last_message_id} | peer |
+| `meet.updated` | the meet_proposal Message (status, `spot_me`, `arrived`) | both |
 | `wave.received` | {wave_id} (client fetches card via REST) | recipient |
 | `wave.accepted` | {wave_id, conversation_id} | sender |
 | `wave.mutual` | {conversation_id, peer_card} | both |

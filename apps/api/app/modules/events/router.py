@@ -194,6 +194,44 @@ async def announce(
     )
 
 
+@router.get("/events/{event_id}/meeting-spots", response_model=list[schemas.SpotOut])
+async def meeting_spots(ctx: OrgStaff, session: DbSession) -> list[schemas.SpotOut]:
+    """Every spot, including ones switched off, so the organizer can bring one back."""
+    return [service.spot_out(s) for s in await service.list_spots(session, ctx.event.id)]
+
+
+@router.post("/events/{event_id}/meeting-spots", response_model=schemas.SpotOut, status_code=201)
+async def add_meeting_spot(
+    body: schemas.SpotCreateIn, ctx: OrgStaff, session: DbSession, audit: Audit
+) -> schemas.SpotOut:
+    audit.log(
+        "event.meeting_spot_add",
+        "event",
+        ctx.event.id,
+        role="organizer",
+        org_id=ctx.event.organizer_id,
+        event_id=ctx.event.id,
+        meta={"label": body.label},
+    )
+    return service.spot_out(await service.add_spot(session, ctx.event, body))
+
+
+@router.patch("/events/{event_id}/meeting-spots/{spot_id}", response_model=schemas.SpotOut)
+async def patch_meeting_spot(
+    spot_id: str, body: schemas.SpotPatchIn, ctx: OrgStaff, session: DbSession, audit: Audit
+) -> schemas.SpotOut:
+    audit.log(
+        "event.meeting_spot_change",
+        "meeting_spot",
+        spot_id,
+        role="organizer",
+        org_id=ctx.event.organizer_id,
+        event_id=ctx.event.id,
+        meta=body.model_dump(exclude_unset=True, exclude={"hint"}),
+    )
+    return service.spot_out(await service.patch_spot(session, ctx.event, spot_id, body))
+
+
 @router.delete("/events/{event_id}", status_code=204, include_in_schema=False)
 async def _no_delete(event_id: str) -> Response:
     """Events are cancelled, never deleted (history, analytics, connections depend on them)."""

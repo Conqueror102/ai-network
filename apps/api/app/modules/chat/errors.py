@@ -13,3 +13,7 @@ class MeetInvalid(ValidationFailed):
 
 class MeetNotOpen(Conflict):
     code, message = "meet_not_open", "This proposal can no longer be accepted"
+
+
+class MeetNotNow(Conflict):
+    code, message = "meet_not_now", "You can do this once the meeting is confirmed and close"

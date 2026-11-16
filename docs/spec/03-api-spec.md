@@ -73,6 +73,9 @@ JWT claims: `sub` (user id), `exp`, `iat`, `premium` (bool), `jti`. Signed HS256
 | `POST /conversations/{id}/messages` `{body, ai_assisted?, idempotency via header}` → `Message` | Also fanned out via WS. → `conversation_blocked` |
 | `POST /conversations/{id}/read` `{last_message_id}` → `204` | Read receipts |
 | `POST /conversations/{id}/meet` `{meeting_point, at}` → meet_proposal message | Counterpart accepts via same endpoint `{accept_message_id}` |
+| `GET /events/{id}/meet-spots?at=` | Numbered meeting spots (`M3 · Coffee stand`, optional hint) with a coarse `busy` level around `at` and one `suggested` (the quietest). Propose with `{spot_id, at, spot_me?}`; accept with `{accept_message_id, spot_me?}` |
+| `POST /conversations/{id}/meet/{message_id}/status` `{spot_me?, arrived?}` | "How to spot me" (80 chars, only the two people see it, erased a day after the meeting) and "I'm here" (confirmed meetings, from 30 min before to 1 h after; pushes the other person once) |
+| `GET/POST /events/{id}/meeting-spots`, `PATCH .../{spot_id}` (organizer) | Manage numbered spots. Numbers are never reused; a removed spot is switched off |
 | `POST /ai/assist` `{conversation_id, action: "draft"\|"rewrite"\|"suggest_replies", text?, tone?}` → `{options: string[]}` | Rate limit 30/h free. → `ai_unavailable` (degrade gracefully) |
 | `POST /ai/brief` `{event_id, user_id}` → `{brief}` [v2 premium] | Meeting prep brief |
 

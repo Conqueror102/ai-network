@@ -1,9 +1,10 @@
 """1:1 chat born from an accepted wave (01 §8). Bodies are encrypted at rest."""
 
+from collections import Counter
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import DateTime, and_, cast, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clock, jobs, outbox
@@ -11,7 +12,14 @@ from app.core.db.pagination import decode_cursor, encode_cursor, paginate
 from app.core.ids import new_id
 from app.modules.chat import errors
 from app.modules.chat.models import Conversation, Message
-from app.modules.chat.schemas import ConversationOut, MessageIn, MessageOut
+from app.modules.chat.schemas import (
+    ConversationOut,
+    MeetIn,
+    MeetSpotOut,
+    MeetStatusIn,
+    MessageIn,
+    MessageOut,
+)
 from app.modules.events import public as events
 from app.modules.identity import public as identity
 from app.modules.matching import public as matching
@@ -253,14 +261,82 @@ async def mark_read(session: AsyncSession, conversation_id: str, me: str, last_i
 # --- meet planner (01 §8.6) --------------------------------------------------------------
 
 
+MEET_SLOT_WINDOW = timedelta(minutes=30)  # meetings this close in time share a spot
+ARRIVE_OPENS_BEFORE = timedelta(minutes=30)
+ARRIVE_CLOSES_AFTER = timedelta(hours=1)
+
+
+def place_of(payload: dict[str, Any]) -> str:
+    """ "M3 · Coffee stand" for a numbered spot, the plain name for older proposals."""
+    code = payload.get("spot_code")
+    return f"{code} · {payload['meeting_point']}" if code else str(payload["meeting_point"])
+
+
+def _busy_level(n: int) -> Literal["quiet", "some", "busy"]:
+    return "quiet" if n == 0 else "some" if n <= 2 else "busy"
+
+
+async def meet_spots(
+    session: AsyncSession, event_id: str, at: datetime | None
+) -> list[MeetSpotOut]:
+    """The event's numbered spots with how busy each is around `at`, and one suggestion:
+    the quietest. Only a coarse level leaves the server, so nobody can tell who is
+    meeting where (no location leak)."""
+    spots = await events.active_spots(session, event_id)
+    if not spots:
+        return []
+    when = at or clock.now()
+    meet_at = cast(Message.payload["at"].astext, DateTime(timezone=True))
+    spot_id = Message.payload["spot_id"].astext
+    counts = Counter(
+        (
+            await session.execute(
+                select(spot_id)
+                .join(Conversation, Conversation.id == Message.conversation_id)
+                .where(
+                    Conversation.event_id == event_id,
+                    Message.kind == "meet_proposal",
+                    Message.payload["status"].astext.in_(("proposed", "accepted")),
+                    spot_id.in_([s.id for s in spots]),
+                    meet_at.between(when - MEET_SLOT_WINDOW, when + MEET_SLOT_WINDOW),
+                )
+                .limit(2000)
+            )
+        ).scalars()
+    )
+    best = min(spots, key=lambda s: (counts.get(s.id, 0), s.number))
+    return [
+        MeetSpotOut(
+            id=s.id,
+            number=s.number,
+            code=s.code,
+            label=s.label,
+            hint=s.hint,
+            busy=_busy_level(counts.get(s.id, 0)),
+            suggested=s.id == best.id,
+        )
+        for s in spots
+    ]
+
+
 async def propose_meet(
-    session: AsyncSession, conversation_id: str, me: str, point: str, at: datetime
+    session: AsyncSession, conversation_id: str, me: str, data: MeetIn
 ) -> MessageOut:
     conv = await get_for(session, conversation_id, me, lock=True)
     event = await events.get_info(session, conv.event_id)
     now = clock.now()
+    at = data.at
+    spot = next(
+        (
+            s
+            for s in await events.active_spots(session, conv.event_id)
+            if s.id == data.spot_id or s.label == data.meeting_point
+        ),
+        None,
+    )
     if (
-        point not in event.meeting_points
+        spot is None
+        or at is None
         or at.tzinfo is None
         or at <= now
         or at > max(event.ends_at, now) + timedelta(hours=2)
@@ -268,13 +344,23 @@ async def propose_meet(
         or at.second
     ):
         raise errors.MeetInvalid
+    payload: dict[str, Any] = {
+        "meeting_point": spot.label,
+        "spot_id": spot.id,
+        "spot_code": spot.code,
+        "spot_hint": spot.hint,
+        "at": at.isoformat(),
+        "status": "proposed",
+    }
+    if data.spot_me:
+        payload["spot_me"] = {me: data.spot_me}
     msg = await _add(
         session,
         conv,
         sender_id=me,
         kind="meet_proposal",
-        body=f"Meet at {point}?",
-        payload={"meeting_point": point, "at": at.isoformat(), "status": "proposed"},
+        body=f"Meet at {spot.place}?",
+        payload=payload,
     )
     outbox.emit(
         session,
@@ -292,33 +378,40 @@ async def propose_meet(
     return message_out(msg)
 
 
+async def _proposal(session: AsyncSession, conv: Conversation, message_id: str) -> Message:
+    proposal = await session.get(Message, message_id)
+    if proposal is None or proposal.conversation_id != conv.id or proposal.kind != "meet_proposal":
+        raise errors.ConversationNotFound
+    return proposal
+
+
 async def accept_meet(
-    session: AsyncSession, conversation_id: str, me: str, message_id: str
+    session: AsyncSession, conversation_id: str, me: str, message_id: str, spot_me: str | None
 ) -> MessageOut:
     conv = await get_for(session, conversation_id, me, lock=True)
-    proposal = await session.get(Message, message_id)
-    if (
-        proposal is None
-        or proposal.conversation_id != conv.id
-        or proposal.kind != "meet_proposal"
-        or proposal.sender_id == me  # only the other person can accept
-    ):
+    proposal = await _proposal(session, conv, message_id)
+    if proposal.sender_id == me:  # only the other person can accept
         raise errors.ConversationNotFound
     payload = dict(proposal.payload or {})
     at = datetime.fromisoformat(payload["at"])
     if payload.get("status") != "proposed" or at <= clock.now():
         raise errors.MeetNotOpen
-    proposal.payload = {**payload, "status": "accepted", "accepted_by": me}
+    payload = {**payload, "status": "accepted", "accepted_by": me}
+    if spot_me:
+        payload["spot_me"] = {**payload.get("spot_me", {}), me: spot_me}
+    proposal.payload = payload
     peer = peer_of(conv, me)
+    place = place_of(payload)
     msg = await _add(
         session,
         conv,
         sender_id=None,
         kind="system",
-        body=f"Meeting confirmed: {payload['meeting_point']}",
+        body=f"Meeting confirmed: {place}",
         payload={
             "meet_message_id": proposal.id,
             "meeting_point": payload["meeting_point"],
+            "spot_code": payload.get("spot_code"),
             "at": payload["at"],
         },
     )
@@ -330,7 +423,7 @@ async def accept_meet(
             "conversation_id": conv.id,
             "event_id": conv.event_id,
             "user_ids": [conv.user_a, conv.user_b],
-            "meeting_point": payload["meeting_point"],
+            "meeting_point": place,
             "at": payload["at"],
         },
     )
@@ -340,7 +433,61 @@ async def accept_meet(
         "chat.meet_reminder", proposal.id, job_id=f"meet:{proposal.id}", defer_s=max(0.0, delay)
     )
     await _fan_out(conv, msg, to=[conv.user_a, conv.user_b])
+    await _meet_updated(conv, proposal)
     return message_out(msg)
+
+
+async def _meet_updated(conv: Conversation, proposal: Message) -> None:
+    """Both phones redraw the meet-up card (status, "how to spot me", who has arrived)."""
+    out = message_out(proposal).model_dump(mode="json")
+    for user_id in (conv.user_a, conv.user_b):
+        await realtime.publish_user(user_id, "meet.updated", out)
+
+
+async def meet_status(
+    session: AsyncSession, conversation_id: str, me: str, message_id: str, data: MeetStatusIn
+) -> MessageOut:
+    """Two things a person can say about their own meet-up: "this is how to spot me" and
+    "I'm here". Both are chosen by the person, for this one meeting, and reach only the
+    other person in the chat; nothing here tracks or infers a location."""
+    conv = await get_for(session, conversation_id, me, lock=True)
+    proposal = await _proposal(session, conv, message_id)
+    payload = dict(proposal.payload or {})
+    at = datetime.fromisoformat(payload["at"])
+    now = clock.now()
+    status = payload.get("status")
+    if status not in ("proposed", "accepted") or now > at + ARRIVE_CLOSES_AFTER:
+        raise errors.MeetNotOpen
+    newly_arrived = False
+    if data.spot_me:
+        payload["spot_me"] = {**payload.get("spot_me", {}), me: data.spot_me}
+    if data.arrived:
+        if status != "accepted" or now < at - ARRIVE_OPENS_BEFORE:
+            raise errors.MeetNotNow
+        arrived = dict(payload.get("arrived", {}))
+        if me not in arrived:  # a second tap changes nothing and pings nobody
+            arrived[me] = now.isoformat()
+            payload["arrived"] = arrived
+            newly_arrived = True
+    if payload == proposal.payload:
+        return message_out(proposal)
+    proposal.payload = payload
+    if newly_arrived:
+        outbox.emit(
+            session,
+            "chat.meet_arrived",
+            {
+                "conversation_id": conv.id,
+                "event_id": conv.event_id,
+                "from_user": me,
+                "to_user": peer_of(conv, me),
+                "meeting_point": place_of(payload),
+                "has_spot_me": me in payload.get("spot_me", {}),
+            },
+        )
+    await session.commit()
+    await _meet_updated(conv, proposal)
+    return message_out(proposal)
 
 
 # --- used by other modules ---------------------------------------------------------------
