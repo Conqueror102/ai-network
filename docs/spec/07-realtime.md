@@ -16,6 +16,7 @@
 |---|---|---|
 | `message.new` | Message | conversation peer |
 | `message.read` | {conversation_id, last_message_id} | peer |
+| `meet.nearby` | {conversation_id, meet_message_id, distance_m, direction, rough, age_s}: never coordinates | the other person in a meet-up, only while both share |
 | `meet.updated` | the meet_proposal Message (status, `spot_me`, `arrived`) | both |
 | `wave.received` | {wave_id} (client fetches card via REST) | recipient |
 | `wave.accepted` | {wave_id, conversation_id} | sender |

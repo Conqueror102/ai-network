@@ -10,15 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import clock, jobs, outbox
 from app.core.db.pagination import decode_cursor, encode_cursor, paginate
 from app.core.ids import new_id
-from app.modules.chat import errors
+from app.modules.chat import errors, location
 from app.modules.chat.models import Conversation, Message
 from app.modules.chat.schemas import (
     ConversationOut,
     MeetIn,
+    MeetPositionIn,
     MeetSpotOut,
     MeetStatusIn,
     MessageIn,
     MessageOut,
+    PeerPositionOut,
 )
 from app.modules.events import public as events
 from app.modules.identity import public as identity
@@ -469,6 +471,8 @@ async def meet_status(
             arrived[me] = now.isoformat()
             payload["arrived"] = arrived
             newly_arrived = True
+            if len(arrived) == 2:  # both found each other: location sharing ends for good
+                payload.pop("sharing", None)
     if payload == proposal.payload:
         return message_out(proposal)
     proposal.payload = payload
@@ -486,8 +490,135 @@ async def meet_status(
             },
         )
     await session.commit()
+    if "sharing" not in payload:
+        await location.forget(proposal.id, conv.user_a, conv.user_b)
     await _meet_updated(conv, proposal)
     return message_out(proposal)
+
+
+# --- two-way location sharing (see location.py for the rules) -----------------------------
+
+
+async def _sharing_meet(
+    session: AsyncSession, conversation_id: str, me: str, message_id: str, *, lock: bool
+) -> tuple[Conversation, Message, dict[str, Any]]:
+    conv = await get_for(session, conversation_id, me, lock=lock)
+    proposal = await _proposal(session, conv, message_id)
+    payload = dict(proposal.payload or {})
+    if payload.get("status") != "accepted":
+        raise errors.MeetNotNow
+    return conv, proposal, payload
+
+
+def _done(payload: dict[str, Any], now: datetime) -> bool:
+    at = datetime.fromisoformat(payload["at"])
+    return now > at + location.CLOSES_AFTER or len(payload.get("arrived", {})) == 2
+
+
+async def set_sharing(
+    session: AsyncSession, conversation_id: str, me: str, message_id: str, on: bool
+) -> PeerPositionOut:
+    conv, proposal, payload = await _sharing_meet(
+        session, conversation_id, me, message_id, lock=True
+    )
+    peer = peer_of(conv, me)
+    sharing = dict(payload.get("sharing", {}))
+    if on:
+        if _done(payload, clock.now()):
+            raise errors.MeetNotOpen
+        if sharing.get(me):
+            return await peer_position(session, conversation_id, me, message_id)
+        sharing[me] = True
+        outbox.emit(
+            session,
+            "chat.meet_sharing",
+            {
+                "conversation_id": conv.id,
+                "event_id": conv.event_id,
+                "from_user": me,
+                "to_user": peer,
+                "peer_sharing": bool(sharing.get(peer)),
+            },
+        )
+    else:
+        sharing.pop(me, None)
+    payload["sharing"] = sharing
+    proposal.payload = payload
+    await session.commit()
+    if not on:
+        await location.forget(proposal.id, me)
+    await _meet_updated(conv, proposal)
+    return _relative(sharing, me, peer, None, None)
+
+
+def _relative(
+    sharing: dict[str, Any],
+    me: str,
+    peer: str,
+    mine: location.Fix | None,
+    theirs: location.Fix | None,
+) -> PeerPositionOut:
+    out = PeerPositionOut(me_sharing=bool(sharing.get(me)), peer_sharing=bool(sharing.get(peer)))
+    if not (out.me_sharing and out.peer_sharing and mine and theirs):
+        return out
+    d = location.distance_m(mine, theirs)
+    out.distance_m = int(round(d / 10) * 10)
+    out.direction = location.direction(mine, theirs)  # type: ignore[assignment]
+    out.rough = d < max(mine.accuracy_m, theirs.accuracy_m)
+    out.age_s = int((clock.now() - theirs.at).total_seconds())
+    return out
+
+
+async def peer_position(
+    session: AsyncSession, conversation_id: str, me: str, message_id: str
+) -> PeerPositionOut:
+    conv, proposal, payload = await _sharing_meet(
+        session, conversation_id, me, message_id, lock=False
+    )
+    peer = peer_of(conv, me)
+    sharing = payload.get("sharing", {})
+    if _done(payload, clock.now()) or not (sharing.get(me) and sharing.get(peer)):
+        return _relative(sharing, me, peer, None, None)
+    return _relative(
+        sharing,
+        me,
+        peer,
+        await location.load(proposal.id, me),
+        await location.load(proposal.id, peer),
+    )
+
+
+async def update_position(
+    session: AsyncSession,
+    conversation_id: str,
+    me: str,
+    message_id: str,
+    data: MeetPositionIn,
+) -> PeerPositionOut:
+    """Store my latest position for this meet-up and tell both phones where the other
+    person is. Refused unless both people are sharing and the meeting is close."""
+    conv, proposal, payload = await _sharing_meet(
+        session, conversation_id, me, message_id, lock=False
+    )
+    peer = peer_of(conv, me)
+    sharing = payload.get("sharing", {})
+    now = clock.now()
+    at = datetime.fromisoformat(payload["at"])
+    if not sharing.get(me) or _done(payload, now) or not location.window_open(at, now):
+        raise errors.MeetNotNow
+    if not sharing.get(peer):  # nothing is stored until both have said yes
+        return _relative(sharing, me, peer, None, None)
+    mine = location.Fix(data.lat, data.lng, data.accuracy_m, now)
+    await location.save(proposal.id, me, mine)
+    theirs = await location.load(proposal.id, peer)
+    if theirs is not None:
+        view = _relative(sharing, peer, me, theirs, mine)
+        await realtime.publish_user(
+            peer,
+            "meet.nearby",
+            {"conversation_id": conv.id, "meet_message_id": proposal.id, **view.model_dump()},
+        )
+    return _relative(sharing, me, peer, mine, theirs)
 
 
 # --- used by other modules ---------------------------------------------------------------
