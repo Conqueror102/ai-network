@@ -91,3 +91,28 @@ class MeetSpotOut(BaseModel):
     hint: str | None
     busy: Literal["quiet", "some", "busy"]
     suggested: bool
+
+
+class MeetShareIn(In):
+    """Turn my location sharing for this one meet-up on or off."""
+
+    on: bool
+
+
+class MeetPositionIn(In):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    accuracy_m: float = Field(ge=0, le=5000)
+
+
+class PeerPositionOut(BaseModel):
+    """Where the other person is relative to me. Never coordinates: a rounded distance
+    and one of eight compass directions. `rough` when the phones' own accuracy is
+    larger than the distance, so the app should lean on the meeting spot instead."""
+
+    me_sharing: bool
+    peer_sharing: bool
+    distance_m: int | None = None
+    direction: Literal["N", "NE", "E", "SE", "S", "SW", "W", "NW"] | None = None
+    rough: bool = False
+    age_s: int | None = None

@@ -1,8 +1,14 @@
 """00 §4: nobody learns where another attendee is, was, or when they were last
 active. v0 has no radar, so the rule is simple: no payload about another person
-carries a location, zone, check-in time or presence field."""
+carries a location, zone, check-in time or presence field.
 
-from app.core import jobs, outbox
+The one exception is two-way meet-up location sharing (chat/location.py): both people
+opt in for one confirmed meeting and see only distance and direction, on its own
+endpoint. The sweep runs again while that is live, to prove nothing spills over."""
+
+from datetime import timedelta
+
+from app.core import clock, jobs, outbox
 from tests.helpers import join, make_event, sign_up
 
 FORBIDDEN = (
@@ -71,11 +77,39 @@ async def test_people_payloads_carry_no_location_or_presence(client):
         "/v1/notifications",
         f"/v1/events/{eid}/waves/inbox",
     ]
-    checked = 0
-    for url in seen:
-        r = await client.get(url, headers=a["headers"])
-        assert r.status_code == 200, f"{url}: {r.text}"
-        checked += 1
-        leaked = {k for k in keys_of(r.json()) if any(f in k.lower() for f in FORBIDDEN)}
-        assert not leaked, f"{url} exposes {leaked}"
-    assert checked == len(seen)
+
+    async def sweep() -> int:
+        checked = 0
+        for url in seen:
+            r = await client.get(url, headers=a["headers"])
+            assert r.status_code == 200, f"{url}: {r.text}"
+            checked += 1
+            leaked = {k for k in keys_of(r.json()) if any(f in k.lower() for f in FORBIDDEN)}
+            assert not leaked, f"{url} exposes {leaked}"
+        return checked
+
+    assert await sweep() == len(seen)
+
+    # live two-way meet-up sharing must not leak into any of the above
+    at = (clock.now() + timedelta(minutes=45)).replace(second=0, microsecond=0)
+    at = at.replace(minute=at.minute - at.minute % 15)
+    meet = f"/v1/conversations/{cid}/meet"
+    pid = (
+        await client.post(
+            meet, json={"meeting_point": "Coffee stand", "at": at.isoformat()}, headers=a["headers"]
+        )
+    ).json()["id"]
+    await client.post(meet, json={"accept_message_id": pid}, headers=b["headers"])
+    clock.advance(at - clock.now() - timedelta(minutes=5))
+    for who in (a, b):
+        await client.post(f"{meet}/{pid}/sharing", json={"on": True}, headers=who["headers"])
+    for who, lat in ((a, 6.43), (b, 6.4302)):
+        r = await client.post(
+            f"{meet}/{pid}/position",
+            json={"lat": lat, "lng": 3.42, "accuracy_m": 10},
+            headers=who["headers"],
+        )
+        assert r.status_code == 200, r.text
+    assert r.json()["distance_m"] is not None
+    await settle()
+    assert await sweep() == len(seen)

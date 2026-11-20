@@ -93,6 +93,49 @@ async def meet_status(
     return await service.meet_status(session, conversation_id, user.user_id, message_id, body)
 
 
+@router.post(
+    "/conversations/{conversation_id}/meet/{message_id}/sharing",
+    response_model=schemas.PeerPositionOut,
+)
+async def meet_sharing(
+    conversation_id: str,
+    message_id: str,
+    body: schemas.MeetShareIn,
+    user: CurrentUser,
+    session: DbSession,
+) -> schemas.PeerPositionOut:
+    """Turn my location sharing for this confirmed meet-up on or off. Nothing is shared
+    until both people have turned it on."""
+    await ratelimit.hit("meet_sharing", user.user_id, limit=10, window_s=600)
+    return await service.set_sharing(session, conversation_id, user.user_id, message_id, body.on)
+
+
+@router.post(
+    "/conversations/{conversation_id}/meet/{message_id}/position",
+    response_model=schemas.PeerPositionOut,
+)
+async def meet_position(
+    conversation_id: str,
+    message_id: str,
+    body: schemas.MeetPositionIn,
+    user: CurrentUser,
+    session: DbSession,
+) -> schemas.PeerPositionOut:
+    """My latest position; returns how far and which way the other person is."""
+    await ratelimit.hit("meet_position", user.user_id, limit=40, window_s=120)
+    return await service.update_position(session, conversation_id, user.user_id, message_id, body)
+
+
+@router.get(
+    "/conversations/{conversation_id}/meet/{message_id}/position",
+    response_model=schemas.PeerPositionOut,
+)
+async def meet_peer_position(
+    conversation_id: str, message_id: str, user: CurrentUser, session: DbSession
+) -> schemas.PeerPositionOut:
+    return await service.peer_position(session, conversation_id, user.user_id, message_id)
+
+
 @router.get("/events/{event_id}/meet-spots", response_model=list[schemas.MeetSpotOut])
 async def meet_spots(
     ctx: events.CheckedIn, session: DbSession, at: AwareDatetime | None = None

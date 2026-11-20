@@ -132,6 +132,27 @@ async def meet_arrived(p: dict[str, Any]) -> None:
         )
 
 
+@outbox.subscribe("chat.meet_sharing")
+async def meet_sharing(p: dict[str, Any]) -> None:
+    """Tells the other person sharing is on. Carries no position, ever."""
+    async with UnitOfWork() as session:
+        name = (await _names(session, p["event_id"], [p["from_user"]]))[p["from_user"]]
+        body = (
+            f"You can now see how far {name} is."
+            if p.get("peer_sharing")
+            else "Turn yours on too and you will see how far apart you are."
+        )
+        await notify(
+            session,
+            p["to_user"],
+            "meet",
+            f"{name} is sharing their location",
+            body,
+            data={"conversation_id": p["conversation_id"]},
+            store=False,
+        )
+
+
 @outbox.subscribe("events.application_decided")
 async def application_decided(p: dict[str, Any]) -> None:
     async with UnitOfWork() as session:

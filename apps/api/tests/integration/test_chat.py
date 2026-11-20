@@ -336,3 +336,90 @@ async def test_numbered_spots_spot_me_and_im_here(client, session):
     msgs = (await client.get(f"/v1/conversations/{cid}/messages", headers=b["headers"])).json()
     card = next(m for m in msgs["items"] if m["id"] == pid)
     assert "spot_me" not in card["payload"] and card["payload"]["status"] == "accepted"
+
+
+async def test_two_way_location_sharing(client, session, monkeypatch):
+    from app.modules.chat import location
+    from app.modules.realtime import public as realtime
+
+    sent: list[tuple[str, str, dict]] = []
+
+    async def capture(user_id, kind, payload):
+        sent.append((user_id, kind, payload))
+
+    monkeypatch.setattr(realtime, "publish_user", capture)
+    _owner, _eid, cid, (a, b, c) = await chat_pair(client, extra=1)
+    at = (clock.now() + timedelta(hours=1)).replace(minute=30, second=0, microsecond=0)
+    url = f"/v1/conversations/{cid}/meet"
+    pid = (
+        await client.post(
+            url, json={"meeting_point": "Coffee stand", "at": at.isoformat()}, headers=a["headers"]
+        )
+    ).json()["id"]
+    share, pos = f"{url}/{pid}/sharing", f"{url}/{pid}/position"
+    here = {"lat": 6.4300, "lng": 3.4200, "accuracy_m": 8}
+    north_east = {"lat": 6.4303, "lng": 3.4203, "accuracy_m": 8}  # about 47 m away
+
+    # not before the meeting is confirmed
+    r = await client.post(share, json={"on": True}, headers=a["headers"])
+    assert r.json()["error"]["code"] == "meet_not_now"
+    await client.post(url, json={"accept_message_id": pid}, headers=b["headers"])
+    # nobody outside the meet-up, and no position before the person turns sharing on
+    assert (await client.post(share, json={"on": True}, headers=c["headers"])).status_code == 404
+    assert (await client.get(pos, headers=c["headers"])).status_code == 404
+    r = await client.post(pos, json=here, headers=a["headers"])
+    assert r.json()["error"]["code"] == "meet_not_now"
+
+    r = await client.post(share, json={"on": True}, headers=a["headers"])
+    assert r.json() == {
+        "me_sharing": True,
+        "peer_sharing": False,
+        "distance_m": None,
+        "direction": None,
+        "rough": False,
+        "age_s": None,
+    }
+    await settle()
+    topics = [e.topic for e in (await session.execute(select(OutboxEvent))).scalars()]
+    assert topics.count("chat.meet_sharing") == 1
+    # too early: positions open 30 minutes before the meeting
+    r = await client.post(pos, json=here, headers=a["headers"])
+    assert r.json()["error"]["code"] == "meet_not_now"
+    clock.advance(at - clock.now() - timedelta(minutes=10))
+    # only one side has said yes: nothing is stored
+    r = await client.post(pos, json=here, headers=a["headers"])
+    assert r.status_code == 200 and r.json()["distance_m"] is None
+    assert await location.load(pid, a["id"]) is None
+
+    await client.post(share, json={"on": True}, headers=b["headers"])
+    await client.post(pos, json=here, headers=a["headers"])
+    sent.clear()
+    r = await client.post(pos, json=north_east, headers=b["headers"])
+    assert r.json()["distance_m"] == 50 and r.json()["direction"] == "SW"
+    assert r.json()["rough"] is False
+    nearby = [p for u, k, p in sent if k == "meet.nearby"]
+    assert [u for u, k, _ in sent if k == "meet.nearby"] == [a["id"]]
+    assert nearby[0]["direction"] == "NE" and nearby[0]["distance_m"] == 50
+    assert not {"lat", "lng"} & set(nearby[0])  # never coordinates
+    r = await client.get(pos, headers=a["headers"])
+    assert r.json()["direction"] == "NE"
+    # nothing about positions reaches the database
+    msgs = (await client.get(f"/v1/conversations/{cid}/messages", headers=a["headers"])).json()
+    assert "lat" not in json.dumps(msgs) and "6.43" not in json.dumps(msgs)
+
+    # turning it off deletes my position at once
+    await client.post(share, json={"on": False}, headers=b["headers"])
+    assert await location.load(pid, b["id"]) is None
+    assert (await client.get(pos, headers=a["headers"])).json()["peer_sharing"] is False
+    await client.post(share, json={"on": True}, headers=b["headers"])
+    await client.post(pos, json=north_east, headers=b["headers"])
+
+    # once both say "I'm here", sharing ends for good
+    status = f"{url}/{pid}/status"
+    await client.post(status, json={"arrived": True}, headers=a["headers"])
+    await client.post(status, json={"arrived": True}, headers=b["headers"])
+    assert await location.load(pid, a["id"]) is None and await location.load(pid, b["id"]) is None
+    r = await client.get(pos, headers=a["headers"])
+    assert r.json()["me_sharing"] is False and r.json()["distance_m"] is None
+    r = await client.post(share, json={"on": True}, headers=a["headers"])
+    assert r.json()["error"]["code"] == "meet_not_open"

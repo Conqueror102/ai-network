@@ -19,6 +19,7 @@ NAMESPACES = {
     "metrics",
     "quota",
     "debounce",
+    "meetloc",  # live meet-up location, two-way consent, minutes-long TTL
 }
 
 _client: Redis | None = None
